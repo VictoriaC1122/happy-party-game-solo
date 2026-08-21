@@ -1,30 +1,22 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#241b34">
-  <meta name="description" content="一個可離線遊玩的單人派對選擇遊戲。">
-  <title>午夜選擇題｜單機版</title>
-  <link rel="stylesheet" href="./styles.css?v=solo2">
-  <script defer src="./data.js?v=solo1"></script><script defer src="./app.js?v=solo1"></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="快樂酒局派對遊戲：一個人也能玩的單機版。">
+  <title>快樂酒局派對遊戲｜單機版</title>
+  <link rel="stylesheet" href="./styles.css?v=solo-party-1"><script defer src="./data.js?v=solo-party-1"></script><script defer src="./app.js?v=solo-party-1"></script>
 </head>
 <body>
+  <div class="backdrop"></div><div class="noise"></div>
   <main class="app-shell">
-    <header class="brand"><span class="brand-mark">✦</span><span>午夜選擇題</span><small>SOLO EDITION</small></header>
-    <section id="start-screen" class="screen start-screen">
-      <p class="eyebrow">一個人的派對，也能很好玩</p><h1>今晚，照自己的<br><em>節奏玩。</em></h1>
-      <p class="lead">10 個夜晚、10 次選擇。認識新朋友、讀懂氣氛、守住界線，看看你會帶著什麼故事回家。</p>
-      <div class="how-to"><span>🎲 每局隨機角色與情境</span><span>🫶 選擇永遠由你決定</span><span>📱 無網路也能玩</span></div>
-      <button id="start-btn" class="button primary">開始今晚</button><button id="continue-btn" class="button text hidden">繼續上一局</button>
-      <p class="note">這是虛構的成人派對情境遊戲；現實中的互動，永遠以明確同意與安全為先。</p>
-    </section>
-    <section id="game-screen" class="screen hidden">
-      <div class="topbar"><button id="quit-btn" class="icon-btn" aria-label="離開遊戲">×</button><div class="round"><span id="round-label">夜晚 1</span><div class="dots" id="round-dots"></div></div><button id="sound-btn" class="icon-btn" aria-label="切換音效">♪</button></div>
-      <div class="meters" aria-label="目前狀態"><div><span>自在</span><strong id="comfort-value">50</strong><i><b id="comfort-bar"></b></i></div><div><span>直覺</span><strong id="instinct-value">50</strong><i><b id="instinct-bar"></b></i></div><div><span>回憶</span><strong id="memory-value">0</strong><i><b id="memory-bar"></b></i></div></div>
-      <article class="scene-card"><div id="scene-orb" class="scene-orb">🌙</div><p id="scene-kicker" class="eyebrow">今晚的相遇</p><h2 id="scene-title">正在挑選今晚的故事</h2><p id="scene-copy"></p><div class="person-card"><span id="person-avatar">🪩</span><div><strong id="person-name"></strong><small id="person-trait"></small></div></div></article>
-      <p class="choice-label">你想怎麼做？</p><div id="choices" class="choices"></div>
-    </section>
-    <section id="result-screen" class="screen hidden"><p class="eyebrow">今晚的結尾</p><div id="ending-icon" class="ending-icon">✦</div><h1 id="ending-title">你帶著好心情回家</h1><p id="ending-copy" class="lead"></p><div class="final-stats"><div><strong id="final-comfort">0</strong><span>自在</span></div><div><strong id="final-instinct">0</strong><span>直覺</span></div><div><strong id="final-memory">0</strong><span>回憶</span></div></div><div id="story-log" class="story-log"></div><button id="restart-btn" class="button primary">再玩一晚</button><button id="home-btn" class="button text">回首頁</button></section>
+    <header class="hero-card"><div><p class="eyebrow">今晚鬧場特別版 · 一人開局</p><h1>快樂酒局派對遊戲</h1><p class="hero-copy">10 個晚上一直換桌。帶原者混在人群裡，感染狀態全程藏著走；你得在氣氛、線索和自己的直覺中，選一條今晚要走的路。</p></div><div class="hero-meta"><span class="meta-pill">單機版</span><span class="meta-pill">10 Round</span></div></header>
+
+    <section id="intro-screen" class="panel screen active"><div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2>今晚會亂，規則看懂就好</h2></div></div><div class="stack"><article class="notice-card"><h3>這是遊戲，不是約會現場</h3><p>成年人上桌比較剛好。裡面的角色、感染和互動全是虛構劇情，笑歸笑，別把遊戲按鈕當成現實操作手冊。</p></article><div class="education-grid"><article class="notice-card"><h3>外表不會爆雷</h3><p>沒症狀，不代表沒事；長得很無害，也可能只是很會長。</p></article><article class="notice-card"><h3>現實沒有外掛</h3><p>保護措施能降風險，不是無敵星星；有在玩就定期驗。</p></article><article class="notice-card"><h3>單機怎麼玩</h3><p>每晚隨機遇見一位對象。先聊天、偷測，再決定互動、換人或去醫院。</p></article></div><article class="notice-card education-callout"><h3>心裡毛毛的？現實沒有翻牌動畫</h3><p>真的擔心就找醫療院所或檢測資源，別把自己嚇成連續劇。</p></article></div><label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我知道這是虛構派對遊戲；現實互動要本人同意，也要做好保護。</span></label><div class="actions-row"><button id="start-btn" class="primary-btn" disabled>一個人也能開喝</button></div></section>
+
+    <section id="round-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">今晚正在換桌</p><h2 id="round-title">Round 1 / 10</h2></div><span id="phase-pill" class="phase-pill warm">單機進行中</span></div><div class="stat-grid"><article><span>欲求不滿值</span><strong id="dissatisfaction-value">0%</strong><div class="meter"><div id="dissatisfaction-bar" class="meter-fill dissatisfaction-fill"></div></div></article><article><span>焦慮得病值</span><strong id="anxiety-value">0%</strong><div class="meter"><div id="anxiety-bar" class="meter-fill anxiety-fill"></div></div></article><article><span>生存分</span><strong id="score-value">0</strong><small id="testkit-value">試紙 1 · 醫院 1</small></article></div><div id="warning" class="health-anxiety-warning hidden">你焦慮程度太高了，無法好好聊天得到對方的資訊</div><article class="partner-card"><div class="partner-head"><div id="partner-avatar" class="partner-avatar">🌚</div><div><p class="eyebrow">今晚對象</p><h3 id="partner-name">還在抽人</h3><p id="partner-flirt" class="partner-flirt"></p></div></div><div id="partner-tags" class="tag-cloud"></div><div class="utility-row"><button id="chat-btn" class="secondary-btn slim-btn">💬 先聊天刺探一下</button><button id="test-btn" class="secondary-btn slim-btn">🧪 偷測一下</button><button id="hospital-btn" class="ghost-btn slim-btn">🏥 去驗一下</button></div></article><p class="action-title">這晚要怎麼走？</p><div id="action-buttons" class="action-buttons"></div></section>
+
+    <section id="summary-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">這局翻牌</p><h2 id="summary-title">第 1 局翻牌</h2></div><span class="phase-pill">單機結算</span></div><article class="notice-card"><h3 id="summary-heading">今晚沒有白來</h3><p id="summary-body"></p><div id="summary-extra" class="summary-extra"></div></article><div id="scoreboard" class="scoreboard"></div><button id="next-btn" class="primary-btn">下一局，走起</button></section>
+
+    <section id="awards-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">今晚頒獎台</p><h2>你的 10 局復盤</h2></div><span class="phase-pill warm">單機結局</span></div><article class="notice-card finale-card"><h3 id="finale-heading">全場真相大白</h3><p id="finale-body"></p></article><div id="replay-list" class="replay-list"></div><button id="restart-btn" class="secondary-btn">再來一桌</button></section>
   </main><div id="toast" class="toast hidden"></div>
 </body></html>
