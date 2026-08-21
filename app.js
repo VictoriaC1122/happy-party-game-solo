@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("consent-checkbox").onchange=event=>{$("start-btn").disabled=!event.target.checked};
   $("start-btn").onclick=start;$("chat-btn").onclick=chat;$("test-btn").onclick=test;$("hospital-btn").onclick=hospital;$("next-btn").onclick=next;$("restart-btn").onclick=start;
   try{game=JSON.parse(localStorage.getItem(STORE))}catch{}
-  if(game?.ended){$("consent-checkbox").checked=true;$("start-btn").disabled=false;$("start-btn").textContent="查看上一局復盤";$("start-btn").onclick=finale}
+  if(game?.ended){$("consent-checkbox").checked=true;$("start-btn").disabled=false;$("start-btn").textContent="查看上一趟復盤";$("start-btn").onclick=finale}
   else if(game&&game.round<GAME_CONFIG.roundCount){$("consent-checkbox").checked=true;$("start-btn").disabled=false;$("start-btn").textContent="繼續上一桌";$("start-btn").onclick=renderRound}
 });
 
@@ -22,7 +22,7 @@ function avatarMarkup(person,className=""){const label=person.gender==="male"?"�
 function renderRound(){
   if(game.ended||game.round>=GAME_CONFIG.roundCount)return finale();
   game.partner=partner();
-  $("round-title").textContent="Round "+(game.round+1)+" / "+GAME_CONFIG.roundCount;
+  $("round-title").textContent="第 "+(game.round+1)+" 晚 / "+GAME_CONFIG.roundCount;
   $("partner-avatar").innerHTML=game.anxiety>=80?"？":avatarMarkup(game.partner);
   $("partner-name").textContent=game.anxiety>=80?"看不清楚":game.partner.name;
   $("partner-flirt").textContent=game.anxiety>=80?"「壓力讓所有資訊都糊成一團。」":"「"+game.partner.flirt+"」";
@@ -36,7 +36,7 @@ function renderStats(){
   $("dissatisfaction-value").textContent=game.heat+"%";$("dissatisfaction-bar").style.width=game.heat+"%";
   $("anxiety-value").textContent=game.anxiety+"%";$("anxiety-bar").style.width=game.anxiety+"%";
   $("score-value").textContent=game.score;$("testkit-value").textContent="試紙 "+game.testkits+" · 醫院 "+game.hospitals;
-  $("warning").textContent=game.anxiety>=80?"心理壓力很高：人物與線索開始模糊。壓力到 100% 會直接結束。":"高風險後不會立刻知道是否感染；只有醫院檢查或第 10 回合才會揭曉。";
+  $("warning").textContent=game.anxiety>=80?"心理壓力很高：人物與線索開始模糊。壓力到 100% 會直接結束。":"高風險後不會立刻知道是否感染；只有醫院檢查或第 10 晚才會揭曉。";
   $("warning").classList.toggle("hidden",game.anxiety<60);
 }
 function renderTags(){
@@ -75,7 +75,7 @@ function resolve(key){
   if(game.heat>=100)return lossOfControl();
   if(game.anxiety>=100)return end("anxiety");
   save();
-  const body=key==="refuse"?copy:(action.risk>=20?"高風險不會立刻揭曉結果。你只能帶著疑慮，繼續把這局走完。":copy);
+  const body=key==="refuse"?copy:(action.risk>=20?"高風險不會立刻揭曉結果。你只能帶著疑慮，繼續把這一晚走完。":copy);
   showSummary(entry,chaos?chaos.title:"這一晚先記下了",body+(chaos?" "+chaos.text:""),action.short,(action.score>=0?"+":"")+action.score+" 生存分 · 壓力 "+(action.anxiety>=0?"+":"")+action.anxiety,chaos);
 }
 function record(action,name,currentPartner,transmission){
@@ -93,10 +93,10 @@ function applyChaos(entry){
   return event;
 }
 function showSummary(entry,heading,body,scoreTitle,scoreCopy,chaos){
-  $("summary-title").textContent="第 "+entry.round+" 局翻牌";$("summary-heading").textContent=heading;$("summary-body").textContent=body;$("summary-extra").innerHTML=summaryMeta();
-  const chaosCard=chaos?"<div><strong>🎲 "+chaos.title+"</strong><span>壓抑 "+(chaos.heat>=0?"+":"")+chaos.heat+" · 壓力 "+(chaos.anxiety>=0?"+":"")+chaos.anxiety+(chaos.skip?" · 少一回合":"")+(chaos.loseTest?" · 試紙失效":"")+"</span></div>":"";
+  $("summary-title").textContent="第 "+entry.round+" 晚翻牌";$("summary-heading").textContent=heading;$("summary-body").textContent=body;$("summary-extra").innerHTML=summaryMeta();
+  const chaosCard=chaos?"<div><strong>🎲 "+chaos.title+"</strong><span>壓抑 "+(chaos.heat>=0?"+":"")+chaos.heat+" · 壓力 "+(chaos.anxiety>=0?"+":"")+chaos.anxiety+(chaos.skip?" · 少一晚":"")+(chaos.loseTest?" · 試紙失效":"")+"</span></div>":"";
   $("scoreboard").innerHTML="<div><strong>"+scoreTitle+"</strong><span>"+scoreCopy+"</span></div>"+chaosCard;
-  $("next-btn").textContent=game.round>=GAME_CONFIG.roundCount?"最終結算":"下一局，走起";show("summary-screen");
+  $("next-btn").textContent=game.round>=GAME_CONFIG.roundCount?"最終結算":"下一晚，走起";show("summary-screen");
 }
 function lossOfControl(){
   const forced=pick([ACTIONS.oral_raw,ACTIONS.sex_raw]),entry=game.log.at(-1),exposure=Boolean(game.partner?.infected)&&Math.random()<forced.risk/100;
@@ -110,14 +110,14 @@ function endingKey(){if(game.result)return game.result;if(game.infected)return"f
 function finale(){
   const key=endingKey(),ending=ENDINGS[key],exposures=game.log.filter(item=>item.transmission),riskCount=game.log.filter(item=>item.risk>=20).length,chaosCount=game.log.filter(item=>item.event).length;
   $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;$("finale-image").src=ending.image;$("finale-image").alt=ending.title;$("finale-status").textContent=ending.label;
-  const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：Round "+exposures.map(item=>item.round).join("、")+"</span>":"<span>延遲判決：未觸發</span>";
-  $("replay-overview").innerHTML="<span>結局："+ending.label+"</span><span>完成回合："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
+  const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":"<span>延遲判決：未觸發</span>";
+  $("replay-overview").innerHTML="<span>結局："+ending.label+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
   $("replay-list").innerHTML=game.log.map(item=>{
     const portrait=item.avatar?avatarMarkup(item,"replay-avatar"):"<span class='replay-icon'>🏥</span>";
     const risk=item.risk?" · 風險 "+item.risk+"%":"";
-    const chaos=item.event?" · 突發："+item.event.title+(item.event.skip?"（少一回合）":"")+(item.event.loseTest?"（試紙失效）":""):"";
-    const result=item.transmission?" · 最終揭曉：此回合觸發感染":"";
-    return "<article class=\"replay-item\">"+portrait+"<div><strong>Round "+item.round+" · "+item.name+" · "+item.action+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+result+"</p></div></article>";
+    const chaos=item.event?" · 突發："+item.event.title+(item.event.skip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"";
+    const result=item.transmission?" · 最終揭曉：這一晚觸發感染":"";
+    return "<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+item.name+" · "+item.action+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+result+"</p></div></article>";
   }).join("");
   game.ended=true;save();show("awards-screen");
 }
