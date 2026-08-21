@@ -2,14 +2,14 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="快樂酒局派對遊戲：一個人也能玩的單機版。">
-  <title>快樂酒局派對遊戲｜單機版</title>
+  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="健康社交模擬遊戲：一個人也能玩的單機版。">
+  <title>健康社交模擬遊戲｜單機版</title>
   <link rel="stylesheet" href="./styles.css?v=solo-party-1"><style>.solo-title{display:inline-block;margin-left:.18em;padding:.18em .42em .25em;border-radius:.45em;background:#9f6675;color:#fff;font-size:.44em;letter-spacing:.02em;vertical-align:middle;white-space:nowrap}.solo-setup{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.solo-setup label{display:grid;gap:7px;color:#66585d;font-size:.82rem;font-weight:800}.solo-setup select{width:100%;padding:12px;border:1px solid rgba(116,82,92,.22);border-radius:12px;background:#fff;color:#4e4145;font:inherit}.partner-avatar{overflow:hidden}.partner-avatar img{width:100%;height:100%;object-fit:cover;object-position:center}.replay-avatar{width:42px;height:42px;object-fit:cover;border-radius:12px;background:#f0dfe5}@media(max-width:520px){.solo-setup{grid-template-columns:1fr}}</style><script defer src="./data.js?v=gender1"></script><script defer src="./app.js?v=gender1"></script>
 </head>
 <body>
   <div class="backdrop"></div><div class="noise"></div>
   <main class="app-shell">
-    <header class="hero-card"><div><p class="eyebrow">今晚鬧場特別版 · 一人開局</p><h1>快樂酒局派對遊戲 <span class="solo-title">單機版</span></h1><p class="hero-copy">10 個晚上一直換桌。這個單機版裡每位角色都是健康者；你只管在氣氛、線索和自己的直覺中，選一條今晚要走的路。</p></div><div class="hero-meta"><span class="meta-pill">單機版</span><span class="meta-pill">全員健康</span><span class="meta-pill">10 Round</span></div></header>
+    <header class="hero-card"><div><p class="eyebrow">今晚鬧場特別版 · 一人開局</p><h1>健康社交模擬遊戲 <span class="solo-title">單機版</span></h1><p class="hero-copy">10 個晚上一直換桌。這個單機版裡每位角色都是健康者；你只管在氣氛、線索和自己的直覺中，選一條今晚要走的路。</p></div><div class="hero-meta"><span class="meta-pill">單機版</span><span class="meta-pill">全員健康</span><span class="meta-pill">10 Round</span></div></header>
 
     <section id="intro-screen" class="panel screen active"><div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2>今晚會亂，規則看懂就好</h2></div></div><div class="stack"><article class="notice-card"><h3>這是遊戲，不是約會現場</h3><p>成年人上桌比較剛好。裡面的角色與互動全是虛構劇情，笑歸笑，別把遊戲按鈕當成現實操作手冊。</p></article><div class="education-grid"><article class="notice-card"><h3>這桌全員健康</h3><p>單機版沒有帶原者設定；每位你遇見的角色都是健康者。</p></article><article class="notice-card"><h3>現實沒有外掛</h3><p>保護措施能降風險，不是無敵星星；有在玩就定期驗。</p></article><article class="notice-card"><h3>單機怎麼玩</h3><p>每晚隨機遇見一位對象。先聊天、偷測，再決定互動、換人或去醫院。</p></article></div><article class="notice-card education-callout"><h3>心裡毛毛的？現實沒有翻牌動畫</h3><p>真的擔心就找醫療院所或檢測資源，別把自己嚇成連續劇。</p></article></div><div class="solo-setup"><label><span>你的性別</span><select id="player-gender"><option value="female">女</option><option value="male">男</option></select></label><label><span>今晚想遇到</span><select id="partner-gender"><option value="male">男</option><option value="female">女</option></select></label></div><label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我知道這是虛構派對遊戲；現實互動要本人同意，也要做好保護。</span></label><div class="actions-row"><button id="start-btn" class="primary-btn" disabled>一個人也能開喝</button></div></section>
 
