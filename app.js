@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
 function start(){game={round:0,score:0,anxiety:0,heat:50,testkits:1,hospitals:1,infected:false,playerGender:$("player-gender").value,partnerGender:$("partner-gender").value,log:[]};save();renderRound()}
 function save(){localStorage.setItem(STORE,JSON.stringify(game))}
-function show(id){document.querySelectorAll(".screen").forEach(screen=>screen.classList.add("hidden"));$(id).classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"})}
+function show(id){document.querySelectorAll(".screen").forEach(screen=>screen.classList.add("hidden"));$(id).classList.remove("hidden");document.body.classList.toggle("gameplay-active",id==="round-screen"||id==="summary-screen");window.scrollTo({top:0,behavior:"auto"})}
 function partner(){const pool=PARTY_PEOPLE.filter(person=>person.gender===(game.partnerGender||"male")),person=pick(pool);return{avatar:person.image,x:person.x,y:person.y,name:person.name,gender:person.gender,flirt:pick(FLIRT_LINES),tags:sample(TAG_POOL,3),infected:Math.random()<GAME_CONFIG.partnerInfectionChance,chat:false,tested:false}}
 function avatarMarkup(person,className=""){const label=person.gender==="male"?"動漫男性角色":"動漫女性角色";return "<span class=\"avatar-sprite "+className+"\" role=\"img\" aria-label=\""+label+"\" style=\"--sheet:url('"+person.avatar+"');--x:"+person.x+";--y:"+person.y+"\"></span>"}
 
