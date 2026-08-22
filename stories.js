@@ -158,8 +158,9 @@ const HEALTHY_CHECKINS=[
 ];
 
 function attachStoryProfiles(){
-  PARTY_PEOPLE.forEach((person,index)=>{
-    const profileIndex=index%50;
+  const profileIndexByGender={male:0,female:0};
+  PARTY_PEOPLE.forEach(person=>{
+    const profileIndex=profileIndexByGender[person.gender]++;
     const templates=person.gender==="male"?MALE_STORY_TEMPLATES:FEMALE_STORY_TEMPLATES;
     const sources=person.gender==="male"?MALE_INFECTION_SOURCES:FEMALE_INFECTION_SOURCES;
     const infectionSource=sources[profileIndex]||null;
@@ -179,5 +180,3 @@ function findPartyProfile(record){
   if(!record)return null;
   return PARTY_PEOPLE.find(person=>(record.profileId&&person.id===record.profileId)||(person.name===record.name&&person.gender===record.gender))||null;
 }
-
-attachStoryProfiles();
