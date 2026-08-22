@@ -16,7 +16,14 @@ document.addEventListener("DOMContentLoaded",()=>{
 function start(){game={round:0,score:0,anxiety:0,heat:50,testkits:1,hospitals:1,infected:false,playerGender:$("player-gender").value,partnerGender:$("partner-gender").value,log:[]};save();renderRound()}
 function save(){localStorage.setItem(STORE,JSON.stringify(game))}
 function show(id){document.querySelectorAll(".screen").forEach(screen=>screen.classList.add("hidden"));$(id).classList.remove("hidden");document.body.classList.toggle("gameplay-active",id==="round-screen"||id==="summary-screen");window.scrollTo({top:0,behavior:"auto"})}
-function partner(){const pool=PARTY_PEOPLE.filter(person=>person.gender===(game.partnerGender||"male")),person=pick(pool);return{avatar:person.image,x:person.x,y:person.y,name:person.name,gender:person.gender,flirt:pick(FLIRT_LINES),tags:sample(TAG_POOL,3),infected:Math.random()<GAME_CONFIG.partnerInfectionChance,chat:false,tested:false}}
+function partner(){
+  const pool=PARTY_PEOPLE.filter(person=>person.gender===(game.partnerGender||"male")),person=pick(pool);
+  return{
+    profileId:person.id,avatar:person.image,x:person.x,y:person.y,name:person.name,gender:person.gender,
+    flirt:pick(FLIRT_LINES),tags:sample(TAG_POOL,3),infected:person.infected,storyTitle:person.title,
+    story:person.story,healthStory:person.healthStory,infectionSource:person.infectionSource,chat:false,tested:false
+  };
+}
 function avatarMarkup(person,className=""){const label=person.gender==="male"?"動漫男性角色":"動漫女性角色";return "<span class=\"avatar-sprite "+className+"\" role=\"img\" aria-label=\""+label+"\" style=\"--sheet:url('"+person.avatar+"');--x:"+person.x+";--y:"+person.y+"\"></span>"}
 
 function renderRound(){
@@ -80,7 +87,12 @@ function resolve(key){
 }
 function record(action,name,currentPartner,transmission){
   game.score+=action.score;
-  const entry={round:game.round+1,name,avatar:currentPartner?.avatar,gender:currentPartner?.gender,x:currentPartner?.x,y:currentPartner?.y,action:action.short,heat:game.heat,anxiety:game.anxiety,risk:action.risk,transmission};
+  const entry={
+    round:game.round+1,name,avatar:currentPartner?.avatar,gender:currentPartner?.gender,x:currentPartner?.x,y:currentPartner?.y,
+    profileId:currentPartner?.profileId,storyTitle:currentPartner?.storyTitle,story:currentPartner?.story,
+    healthStory:currentPartner?.healthStory,infectionSource:currentPartner?.infectionSource,
+    partnerInfected:currentPartner?.infected,action:action.short,heat:game.heat,anxiety:game.anxiety,risk:action.risk,transmission
+  };
   game.log.push(entry);game.round++;return entry;
 }
 function applyChaos(entry){
@@ -109,15 +121,20 @@ function end(key){game.ended=true;game.result=key;save();finale()}
 function endingKey(){if(game.result)return game.result;if(game.infected)return"final_positive";if(game.heat===0)return"victory";return"unfinished"}
 function finale(){
   const key=endingKey(),ending=ENDINGS[key],exposures=game.log.filter(item=>item.transmission),riskCount=game.log.filter(item=>item.risk>=20).length,chaosCount=game.log.filter(item=>item.event).length;
+  const unlockedStories=new Set(game.log.map(item=>(item.profileId||findPartyProfile(item)?.id)).filter(Boolean)).size;
   $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;$("finale-image").src=ending.image;$("finale-image").alt=ending.title;$("finale-status").textContent=ending.label;
   const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":"<span>延遲判決：未觸發</span>";
-  $("replay-overview").innerHTML="<span>結局："+ending.label+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
+  $("replay-overview").innerHTML="<span>結局："+ending.label+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
   $("replay-list").innerHTML=game.log.map(item=>{
     const portrait=item.avatar?avatarMarkup(item,"replay-avatar"):"<span class='replay-icon'>🏥</span>";
     const risk=item.risk?" · 風險 "+item.risk+"%":"";
     const chaos=item.event?" · 突發："+item.event.title+(item.event.skip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"";
     const result=item.transmission?" · 最終揭曉：這一晚觸發感染":"";
-    return "<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+item.name+" · "+item.action+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+result+"</p></div></article>";
+    const profile=item.story?item:findPartyProfile(item),profileInfected=Boolean(profile?.infected??profile?.partnerInfected);
+    const story=profile?.story
+      ?"<details class=\"story-unlock\"><summary>🔓 解鎖人物故事 · "+(profile.storyTitle||profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+profile.story+"</p><p class=\"story-health"+(profileInfected?" story-risk":"")+"\"><b>"+(profileInfected?"虛構感染來源｜":"健康背景｜")+"</b>"+(profileInfected?profile.infectionSource:profile.healthStory)+"</p><small>所有角色均為虛構成年人；健康資訊僅為遊戲設定，感染不代表任何人的價值或道德。</small></div></details>"
+      :"";
+    return "<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+item.name+" · "+item.action+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+result+"</p>"+story+"</div></article>";
   }).join("");
   game.ended=true;save();show("awards-screen");
 }
