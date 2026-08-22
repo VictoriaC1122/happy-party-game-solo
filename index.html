@@ -2,25 +2,76 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <style>.avatar-sprite{display:block;width:100%;height:100%;background-image:var(--sheet);background-size:500% 500%;background-position:calc(var(--x,0) * 25%) calc(var(--y,0) * 25%);background-repeat:no-repeat}.replay-avatar.avatar-sprite{width:42px;height:42px;flex:0 0 42px;border-radius:12px;background-color:#f0dfe5}</style>
-  <style>html{-webkit-text-size-adjust:100%}button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}.game-guide-toggle{border:1px solid rgba(116,82,92,.2);border-radius:15px;background:rgba(255,255,255,.56);overflow:hidden}.game-guide-toggle summary{min-height:48px;display:flex;align-items:center;padding:12px 14px;color:#714555;font-size:.9rem;font-weight:800;cursor:pointer;list-style:none}.game-guide-toggle summary::-webkit-details-marker{display:none}.game-guide-toggle summary:after{content:'＋';margin-left:auto;font-size:1.25rem}.game-guide-toggle[open] summary:after{content:'－'}.game-guide-toggle .education-grid{padding:0 12px 12px}.game-guide-toggle .education-callout{margin:0 12px 12px}@media(max-width:620px){.intro-notice{padding:14px}.intro-notice p{font-size:.88rem}.consent-box{margin:14px 0;font-size:.82rem}.actions-row{margin-top:10px}.actions-row .primary-btn{width:100%;min-height:52px}.solo-setup select{min-height:48px;font-size:16px}.game-guide-toggle summary{min-height:52px;padding:14px}.game-guide-toggle .education-grid{grid-template-columns:1fr;gap:8px}.game-guide-toggle .notice-card{padding:13px}.game-guide-toggle .education-callout{padding:13px}.partner-avatar{flex-basis:58px;width:58px;height:58px}.partner-head{gap:10px}.partner-head h3{font-size:1.35rem}.tag-cloud{gap:6px}.tag{padding:7px 9px}.toast{bottom:calc(12px + env(safe-area-inset-bottom));width:calc(100vw - 32px)}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important}}</style>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="健康社交模擬遊戲：一個人也能玩的單機版。">
+  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="健康社交模擬遊戲：一個人也能玩的 10 晚單機社交模擬。">
+  <meta name="robots" content="index,follow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <link rel="canonical" href="https://victoriac1122.github.io/happy-party-game-solo/">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:title" content="健康社交模擬遊戲｜單機版">
+  <meta property="og:description" content="一個人也能玩的 10 晚單機社交模擬。">
+  <meta property="og:url" content="https://victoriac1122.github.io/happy-party-game-solo/">
+  <meta property="og:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="健康社交模擬遊戲｜單機版">
+  <meta name="twitter:description" content="一個人也能玩的 10 晚單機社交模擬。">
+  <meta name="twitter:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
   <title>健康社交模擬遊戲｜單機版</title>
-<link rel="stylesheet" href="./styles.css?v=solo-party-2"><link rel="stylesheet" href="./endings.css?v=delay1"><style>.solo-title{display:inline-block;margin-left:.18em;padding:.18em .42em .25em;border-radius:.45em;background:#9f6675;color:#fff;font-size:.44em;letter-spacing:.02em;vertical-align:middle;white-space:nowrap}.solo-setup{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.solo-setup label{display:grid;gap:7px;color:#66585d;font-size:.82rem;font-weight:800}.solo-setup select{width:100%;padding:12px;border:1px solid rgba(116,82,92,.22);border-radius:12px;background:#fff;color:#4e4145;font:inherit}.partner-avatar{overflow:hidden}.partner-avatar img{width:100%;height:100%;object-fit:cover;object-position:center}.replay-avatar{width:42px;height:42px;object-fit:cover;border-radius:12px;background-color:#f0dfe5}.action-btn.locked{background:#eee7e8;color:#85767a;cursor:not-allowed;opacity:.7}@media(max-width:620px){body{overscroll-behavior-y:contain}.app-shell{width:calc(100vw - 20px);margin:10px auto 26px;gap:10px}.hero-card{padding:18px}.hero-card h1{font-size:clamp(1.85rem,9vw,2.35rem)}.screen{padding:16px}.panel-head{margin-bottom:13px}.stat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.stat-grid article{padding:10px}.stat-grid strong{font-size:1.05rem}.stat-grid small{font-size:.65rem}.partner-card{padding:15px}.utility-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.utility-row .ghost-btn{grid-column:1/-1}.slim-btn,.action-btn{min-height:48px}.action-buttons{grid-template-columns:1fr;gap:8px}.action-btn{min-height:70px}.replay-item{padding:10px}}@media(max-width:520px){.solo-setup{grid-template-columns:1fr}.hero-meta{gap:6px}.meta-pill{padding:7px 10px;font-size:.72rem}}@media(pointer:coarse){button{min-height:44px}}</style><link rel="stylesheet" href="./mobile.css?v=mobile1"><link rel="stylesheet" href="./mobile-refinement.css?v=mobile2"><link rel="stylesheet" href="./stories.css?v=stories2"><script defer src="./data.js?v=nights5"></script><script defer src="./stories.js?v=stories3"></script><script defer src="./extra-stories.js?v=stories4"></script><script defer src="./chaos.js?v=chaos1"></script><script defer src="./conversation.js?v=chat2"></script><script defer src="./app.js?v=chat2"></script>
-  <link rel="stylesheet" href="./conversations.css?v=chat1">
+  <link rel="stylesheet" href="./styles.css?v=prod3">
+  <link rel="stylesheet" href="./endings.css?v=prod3">
+  <link rel="stylesheet" href="./mobile.css?v=prod3">
+  <link rel="stylesheet" href="./stories.css?v=prod3">
+  <link rel="stylesheet" href="./conversations.css?v=prod3">
+  <link rel="stylesheet" href="./polish.css?v=prod3">
+  <script defer src="./data.js?v=nights6"></script>
+  <script defer src="./stories.js?v=stories4"></script>
+  <script defer src="./extra-stories.js?v=stories5"></script>
+  <script defer src="./chaos.js?v=chaos2"></script>
+  <script defer src="./conversation.js?v=prod3"></script>
+  <script defer src="./app.js?v=prod3"></script>
 </head>
 <body>
-  <div class="backdrop"></div><div class="noise"></div>
-  <main class="app-shell">
+  <div class="backdrop" aria-hidden="true"></div>
+  <noscript><p class="noscript-notice" role="alert">這個遊戲需要啟用 JavaScript 才能開始。</p></noscript>
+  <main id="main-content" class="app-shell">
     <header class="hero-card"><div><p class="eyebrow">今晚鬧場特別版 · 一人開局</p><h1>健康社交模擬遊戲 <span class="solo-title">單機版</span></h1><p class="hero-copy">10 個晚上一直換桌。高風險後不會立刻公布結果；你得在氣氛、線索和自己的直覺中，把這一晚走完，還要撐過突發事故。</p></div><div class="hero-meta"><span class="meta-pill">單機版</span><span class="meta-pill">延遲判決</span><span class="meta-pill">10 晚</span></div></header>
 
-    <section id="intro-screen" class="panel screen active"><div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2>今晚會亂，規則看懂就好</h2></div></div><div class="stack"><article class="notice-card intro-notice"><h3>這是遊戲，不是約會現場</h3><p>虛構的成人派對情境；現實互動永遠以同意與保護為先。</p></article><div class="solo-setup"><label><span>你的性別</span><select id="player-gender"><option value="female">女</option><option value="male">男</option></select></label><label><span>今晚想遇到</span><select id="partner-gender"><option value="male">男</option><option value="female">女</option></select></label></div><details class="game-guide-toggle"><summary>今晚規則與提醒</summary><div class="education-grid"><article class="notice-card"><h3>延遲判決</h3><p>高風險後不會立即告知感染；只有醫院檢查或最終結算才會揭曉。</p></article><article class="notice-card"><h3>醫院可提早揭曉</h3><p>醫院會清空心理壓力、提高壓抑值，也會當場揭露目前結果。</p></article><article class="notice-card"><h3>怎麼才算贏</h3><p>第 10 晚結算時，壓抑值必須歸零，而且身體健康；壓抑或壓力滿格會提前失敗。</p></article></div><article class="notice-card education-callout"><h3>心裡毛毛的？現實沒有翻牌動畫</h3><p>真的擔心就找醫療院所或檢測資源，別把自己嚇成連續劇。</p></article></details></div><label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我知道這是虛構派對遊戲；現實互動要本人同意，也要做好保護。</span></label><div class="actions-row"><button id="start-btn" class="primary-btn" disabled>一個人也能開喝</button></div></section>
+    <section id="intro-screen" class="panel screen active" aria-labelledby="intro-title">
+      <div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2 id="intro-title">今晚會亂，規則看懂就好</h2></div></div>
+      <div id="load-error" class="notice-card load-error hidden" role="alert"><h3>遊戲元件沒有完整載入</h3><p>請重新載入頁面後再開始；目前不會建立不完整的遊戲進度。</p></div>
+      <div class="stack">
+        <article class="notice-card intro-notice"><h3>這是遊戲，不是約會現場</h3><p>虛構的成人派對情境；現實互動永遠以同意與保護為先。</p></article>
+        <div class="solo-setup"><label><span>你的性別</span><select id="player-gender"><option value="female">女</option><option value="male">男</option></select></label><label><span>今晚想遇到</span><select id="partner-gender"><option value="male">男</option><option value="female">女</option></select></label></div>
+        <p id="resume-note" class="resume-note hidden" role="status"></p>
+        <details class="game-guide-toggle"><summary>今晚規則與提醒</summary><div class="education-grid"><article class="notice-card"><h3>延遲判決</h3><p>高風險後不會立即告知感染；只有醫院檢查或最終結算才會揭曉。</p></article><article class="notice-card"><h3>醫院可提早揭曉</h3><p>醫院會清空心理壓力、提高壓抑值，也會當場揭露目前結果。</p></article><article class="notice-card"><h3>怎麼才算贏</h3><p>第 10 晚結算時，壓抑值必須歸零，而且身體健康；壓抑或壓力滿格會提前失敗。</p></article></div><article class="notice-card education-callout"><h3>心裡毛毛的？現實沒有翻牌動畫</h3><p>真的擔心就找醫療院所或檢測資源，別把自己嚇成連續劇。</p></article></details>
+      </div>
+      <label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我知道這是虛構派對遊戲；現實互動要本人同意，也要做好保護。</span></label>
+      <div class="actions-row"><button id="start-btn" class="primary-btn" type="button" disabled>一個人也能開喝</button><button id="new-game-btn" class="ghost-btn hidden" type="button">開始全新一局</button></div>
+    </section>
 
-    <section id="round-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">今晚正在換桌</p><h2 id="round-title">第 1 晚 / 10</h2></div><span id="phase-pill" class="phase-pill warm">目標：壓抑歸零且健康</span></div><div class="stat-grid"><article><span>欲求不滿值</span><strong id="dissatisfaction-value">0%</strong><div class="meter"><div id="dissatisfaction-bar" class="meter-fill dissatisfaction-fill"></div></div></article><article><span>心理壓力</span><strong id="anxiety-value">0%</strong><div class="meter"><div id="anxiety-bar" class="meter-fill anxiety-fill"></div></div></article><article><span>生存分</span><strong id="score-value">0</strong><small id="testkit-value">試紙 1 · 醫院 1</small></article></div><div id="warning" class="health-anxiety-warning hidden">心理壓力過高，開始看不清楚資訊</div><article class="partner-card"><div class="partner-head"><div id="partner-avatar" class="partner-avatar">🌚</div><div><p class="eyebrow">今晚對象</p><h3 id="partner-name">還在抽人</h3><p id="partner-flirt" class="partner-flirt"></p></div></div><div id="partner-tags" class="tag-cloud"></div><section id="chat-dialogue" class="chat-dialogue" role="status" aria-live="polite" aria-atomic="true" aria-relevant="text" aria-label="刺探對話"><div class="chat-dialogue-head"><span class="chat-dialogue-label">刺探對話</span><span class="chat-dialogue-state">尚未開始</span></div><p class="chat-dialogue-copy">先用聊天探探對方的口風；這晚得到的線索，會留在這裡。</p></section><div class="utility-row"><button id="chat-btn" class="secondary-btn slim-btn" aria-controls="chat-dialogue" aria-label="刺探聊天">💬 刺探聊天</button><button id="test-btn" class="secondary-btn slim-btn">🧪 偷測一下</button><button id="hospital-btn" class="ghost-btn slim-btn">🏥 去驗一下</button></div></article><p class="action-title">這晚要怎麼走？</p><div id="action-buttons" class="action-buttons"></div></section>
+    <section id="round-screen" class="panel screen hidden" aria-labelledby="round-title">
+      <div class="panel-head"><div><p class="eyebrow">今晚正在換桌</p><h2 id="round-title">第 1 晚 / 10</h2></div><span id="phase-pill" class="phase-pill warm">目標：壓抑歸零且健康</span></div>
+      <div class="stat-grid" aria-label="本局狀態">
+        <article><span>欲求不滿值</span><strong id="dissatisfaction-value">0%</strong><div class="meter"><div id="dissatisfaction-bar" class="meter-fill dissatisfaction-fill"></div></div></article>
+        <article><span>心理壓力</span><strong id="anxiety-value">0%</strong><div class="meter"><div id="anxiety-bar" class="meter-fill anxiety-fill"></div></div></article>
+        <article><span>生存分</span><strong id="score-value">0</strong><small id="testkit-value">試紙 1 · 醫院 1</small></article>
+      </div>
+      <div id="warning" class="health-anxiety-warning hidden"></div>
+      <article class="partner-card" aria-labelledby="partner-name">
+        <div class="partner-head"><div id="partner-avatar" class="partner-avatar" aria-hidden="true">🌚</div><div><p class="eyebrow">今晚對象</p><h3 id="partner-name">還在抽人</h3><p id="partner-flirt" class="partner-flirt"></p></div></div>
+        <div id="partner-tags" class="tag-cloud" aria-label="已知線索"></div>
+        <section id="chat-dialogue" class="chat-dialogue" role="status" aria-live="polite" aria-atomic="true" aria-relevant="text" aria-label="刺探對話"><div class="chat-dialogue-head"><span class="chat-dialogue-label">刺探對話</span><span class="chat-dialogue-state">尚未開始</span></div><p class="chat-dialogue-copy">先用聊天探探對方的口風；這晚得到的線索，會留在這裡。</p></section>
+        <details id="chat-history" class="chat-history hidden"><summary>已揭露對話</summary><ol id="chat-history-list"></ol></details>
+        <div class="utility-row" aria-label="刺探與檢測工具"><button id="chat-btn" class="secondary-btn slim-btn" type="button" aria-controls="chat-dialogue">💬 刺探聊天</button><button id="test-btn" class="secondary-btn slim-btn" type="button">🧪 偷測一下</button><button id="hospital-btn" class="ghost-btn slim-btn" type="button">🏥 去驗一下</button></div>
+      </article>
+      <h3 id="action-title" class="action-title">這晚要怎麼走？</h3>
+      <div id="action-buttons" class="action-buttons" role="group" aria-labelledby="action-title"></div>
+    </section>
 
-    <section id="summary-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">今晚翻牌</p><h2 id="summary-title">第 1 晚翻牌</h2></div><span class="phase-pill">單機結算</span></div><article class="notice-card"><h3 id="summary-heading">今晚沒有白來</h3><p id="summary-body"></p><div id="summary-extra" class="summary-extra"></div></article><div id="scoreboard" class="scoreboard"></div><button id="next-btn" class="primary-btn">下一晚，走起</button></section>
+    <section id="summary-screen" class="panel screen hidden" aria-labelledby="summary-title"><div class="panel-head"><div><p class="eyebrow">今晚翻牌</p><h2 id="summary-title">第 1 晚翻牌</h2></div><span class="phase-pill">單機結算</span></div><article class="notice-card summary-card"><h3 id="summary-heading">今晚沒有白來</h3><p id="summary-body"></p><div id="summary-extra" class="summary-extra"></div></article><div id="scoreboard" class="scoreboard" aria-label="本晚結果"></div><button id="next-btn" class="primary-btn" type="button">下一晚，走起</button></section>
 
-    <section id="awards-screen" class="panel screen hidden"><div class="panel-head"><div><p class="eyebrow">今晚頒獎台</p><h2>你的 10 晚復盤</h2></div><span class="phase-pill warm">單機結局</span></div><img id="finale-image" class="finale-art" alt="結局插圖"><article class="notice-card finale-card"><span id="finale-status" class="finale-status">單機結局</span><h3 id="finale-heading">全場真相大白</h3><p id="finale-body"></p></article><div id="replay-overview" class="replay-overview"></div><div id="replay-list" class="replay-list"></div><button id="restart-btn" class="secondary-btn">再來一桌</button></section>
+    <section id="awards-screen" class="panel screen hidden" aria-labelledby="awards-title"><div class="panel-head"><div><p class="eyebrow">今晚頒獎台</p><h2 id="awards-title">你的 10 晚復盤</h2></div><span class="phase-pill warm">單機結局</span></div><img id="finale-image" class="finale-art" alt="" width="1672" height="941" decoding="async"><article class="notice-card finale-card"><span id="finale-status" class="finale-status">單機結局</span><h3 id="finale-heading">全場真相大白</h3><p id="finale-body"></p></article><div id="replay-overview" class="replay-overview" aria-label="復盤總覽"></div><div id="replay-list" class="replay-list" aria-label="每晚復盤"></div><button id="restart-btn" class="secondary-btn" type="button">再來一桌</button></section>
   </main><div id="toast" class="toast hidden"></div>
 </body></html>

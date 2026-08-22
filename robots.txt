@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://victoriac1122.github.io/happy-party-game-solo/sitemap.xml

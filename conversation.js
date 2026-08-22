@@ -75,10 +75,11 @@
     return clues;
   }
 
-  function getActionLocks(clues){
+  function getActionLocks(clues,health={}){
     const locks={};
     const constraints=new Set((Array.isArray(clues)?clues:[]).filter(clue=>clue.revealed&&clue.constraint).map(clue=>clue.constraint));
     const lock=(keys,reason)=>keys.forEach(key=>{locks[key]=locks[key]||reason});
+    if(health.tested&&health.abnormal)lock(ACTION_KEYS,"試紙顯示異常：今晚先停下，請選擇換一個或去驗一下。");
     if(constraints.has("no_intimacy"))lock(ACTION_KEYS,"已知界線：今晚只想聊天，請尊重並選擇離開。");
     if(constraints.has("condom_only"))lock(["oral_raw","sex_raw"],"已知界線：只接受有保護的互動。");
     if(constraints.has("no_oral"))lock(["oral_condom","oral_raw"],"已知界線：今晚不想口腔親密。");

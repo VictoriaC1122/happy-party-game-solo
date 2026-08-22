@@ -30,12 +30,12 @@ const GAME_SCRIPTS = [
 ];
 const SCREEN_IDS = ["intro-screen", "round-screen", "summary-screen", "awards-screen"];
 const ELEMENT_IDS = [
-  "consent-checkbox", "start-btn", "chat-btn", "test-btn", "hospital-btn", "next-btn", "restart-btn",
+  "consent-checkbox", "start-btn", "new-game-btn", "resume-note", "load-error", "chat-btn", "test-btn", "hospital-btn", "next-btn", "restart-btn",
   "toast", "warning", "player-gender", "partner-gender", "round-title", "partner-avatar", "partner-name",
   "partner-flirt", "partner-tags", "action-buttons", "dissatisfaction-value", "dissatisfaction-bar",
   "anxiety-value", "anxiety-bar", "score-value", "testkit-value", "summary-title", "summary-heading",
   "summary-body", "summary-extra", "scoreboard", "finale-heading", "finale-body", "finale-image",
-  "finale-status", "replay-overview", "replay-list", ...SCREEN_IDS
+  "finale-status", "replay-overview", "replay-list", "chat-history", "chat-history-list", ...SCREEN_IDS
 ];
 
 class FakeClassList {
@@ -102,6 +102,7 @@ function createHarness({ savedGame = null, randomValues = [] } = {}) {
   elements.get("anxiety-bar").parentElement = anxietyMeter;
   elements.get("player-gender").value = "female";
   elements.get("partner-gender").value = "male";
+  elements.get("consent-checkbox").checked = true;
 
   const listeners = new Map();
   const storage = new Map();
@@ -184,6 +185,7 @@ function createHarness({ savedGame = null, randomValues = [] } = {}) {
       resolve,
       next,
       renderRound,
+      renderActions,
       applyChaos,
       finale,
       normalizeGame,
@@ -478,6 +480,89 @@ test("a test kit reveals all conversation clues without exposing a health verdic
   assert.doesNotMatch(serialisedClues, /infected|感染|陽性|陰性|帶原/i, "the conversation system must not turn a test into an infection-status oracle");
 });
 
+test("an abnormal test result locks intimate actions but keeps leaving available", () => {
+  const engine = createConversationEngine();
+  const clues = engine.buildClues(createConversationPerson());
+  const locks = engine.getActionLocks(clues, { tested: true, abnormal: true });
+
+  assert.deepEqual(Object.keys(locks).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
+  assert.match(locks.sex_condom, /試紙顯示異常/);
+  assert.equal(locks.refuse, undefined);
+});
+
+test("a saved hidden last clue cannot become the active dialogue", () => {
+  const harness = createHarness();
+  const profile = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
+  const normalized = harness.api.normalizeGame({
+    round: 0,
+    phase: "round",
+    playerGender: "female",
+    partnerGender: "male",
+    partner: {
+      profileId: profile.id,
+      round: 1,
+      clues: [{ id: "opening", revealed: true }],
+      lastClueId: "care",
+      tested: false
+    }
+  });
+
+  assert.equal(normalized.partner.lastClueId, "opening");
+  assert.equal(normalized.partner.clues.find(clue => clue.id === "care").revealed, false);
+});
+
+test("an abnormal tested partner cannot advance an intimate action through direct resolve", () => {
+  const harness = createHarness();
+  const engine = harness.api.conversation;
+  const profile = harness.api.data.PARTY_PEOPLE.find(person => {
+    const boundary = engine.buildClues(person).find(clue => clue.id === "boundary");
+    return person.infected && !boundary.constraint;
+  });
+  assert.ok(profile, "the library should include an infected profile with no separate boundary lock");
+  const clues = engine.buildClues(profile);
+  engine.revealAllClues(clues);
+  harness.api.setGame({
+    schemaVersion: 6,
+    phase: "round",
+    round: 0,
+    score: 0,
+    anxiety: 0,
+    heat: 50,
+    testkits: 0,
+    hospitals: 1,
+    infected: false,
+    playerGender: "female",
+    partnerGender: "male",
+    partner: {
+      profileId: profile.id,
+      avatar: profile.image,
+      x: profile.x,
+      y: profile.y,
+      name: profile.name,
+      gender: profile.gender,
+      flirt: "測試",
+      clues,
+      lastClueId: "care",
+      infected: true,
+      tested: true,
+      round: 1
+    },
+    log: [],
+    ended: false,
+    result: null
+  });
+
+  harness.api.renderActions();
+  assert.match(harness.element("action-buttons").innerHTML, /aria-disabled=\"true\"/);
+  assert.doesNotMatch(harness.element("action-buttons").innerHTML, /disabled aria-disabled/);
+  harness.api.resolve("sex_condom");
+
+  const state = harness.api.getGame();
+  assert.equal(state.round, 0);
+  assert.equal(state.log.length, 0);
+  assert.equal(state.phase, "round");
+});
+
 test("only revealed boundaries lock the incompatible actions and always preserve leaving", () => {
   const engine = createConversationEngine();
   const clues = [
@@ -497,4 +582,56 @@ test("only revealed boundaries lock the incompatible actions and always preserve
   const allIntimacyLocked = engine.getActionLocks([{ id: "chat-only", revealed: true, constraint: "no_intimacy" }]);
   assert.deepEqual(Object.keys(allIntimacyLocked).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
   assert.match(allIntimacyLocked.sex_condom, /只想聊天/);
+});
+
+test("the production document contains every required interactive mount point", () => {
+  const markup = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const requiredIds = [
+    "consent-checkbox", "start-btn", "new-game-btn", "resume-note", "load-error",
+    "chat-btn", "test-btn", "hospital-btn", "chat-history", "chat-history-list",
+    "action-buttons", "next-btn", "restart-btn", "finale-image", "toast"
+  ];
+
+  requiredIds.forEach(id => {
+    assert.match(markup, new RegExp(`id="${id}"`), `index.html must contain #${id}`);
+  });
+  const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(new Set(ids).size, ids.length, "interactive IDs must remain unique");
+  const scriptOrder = ["data.js", "stories.js", "extra-stories.js", "chaos.js", "conversation.js", "app.js"]
+    .map(filename => markup.indexOf(`src="./${filename}`));
+  assert.ok(scriptOrder.every((position, index) => position > -1 && (index === 0 || position > scriptOrder[index - 1])), "browser globals must load in dependency order");
+  assert.match(markup, /role="group" aria-labelledby="action-title"/);
+  assert.match(markup, /width="1672" height="941" decoding="async"/);
+});
+
+test("start still enforces the consent reminder when called directly", () => {
+  const harness = createHarness();
+  harness.element("consent-checkbox").checked = false;
+
+  harness.api.start();
+
+  assert.equal(harness.api.getGame(), null);
+  assert.match(harness.element("toast").textContent, /先確認/);
+});
+
+test("corrupt persisted data is discarded instead of retried on every launch", () => {
+  const harness = createHarness({ savedGame: "{not json" });
+
+  assert.equal(harness.api.getGame(), null);
+  assert.equal(harness.getSavedGame(), null);
+});
+
+test("runtime avatar and ending assets use the optimized delivery paths", () => {
+  const { data } = createHarness().api;
+  assert.ok(data.AVATAR_SHEETS.male.every(pathname => pathname.includes("/optimized/avatars/") && pathname.endsWith(".jpg")));
+  assert.ok(data.AVATAR_SHEETS.female.every(pathname => pathname.includes("/optimized/avatars/") && pathname.endsWith(".jpg")));
+
+  const harness = createHarness();
+  harness.api.start();
+  harness.api.getGame().heat = 0;
+  harness.api.getGame().round = data.GAME_CONFIG.roundCount;
+  harness.api.getGame().phase = "summary";
+  harness.api.finale();
+  assert.match(harness.element("finale-image").src, /optimized\/endings\//);
+  assert.match(harness.element("finale-image").srcset, /640w/);
 });

@@ -2,7 +2,7 @@ const STORE="happy-party-solo-v4";
 const GAME_SCHEMA_VERSION=6;
 const VALID_GENDERS=new Set(["male","female"]);
 const VALID_RESULTS=new Set(Object.keys(ENDINGS));
-const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).reduce((all,sheets)=>all.concat(sheets),[]));
+const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).reduce((all,sheets)=>all.concat(sheets),["./assets/male-avatars-a.png","./assets/male-avatars-b.png","./assets/female-avatars-a.png","./assets/female-avatars-b.png"]));
 const PASSIVE_ACTIONS={chatOverload:{short:"聊天後壓抑失控",score:0,risk:0}};
 let game;
 let interactionLocked=false;
@@ -19,13 +19,15 @@ const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&
 const genderLabel=gender=>gender==="female"?"女":"男";
 const conversation=()=>globalThis.ConversationEngine;
 const hiddenClues=partner=>Array.isArray(partner?.clues)?partner.clues.filter(clue=>!clue.revealed):[];
-const currentClue=partner=>partner?.clues?.find(clue=>clue.id===partner.lastClueId)||partner?.clues?.find(clue=>clue.revealed)||null;
+const currentClue=partner=>partner?.clues?.find(clue=>clue.revealed&&clue.id===partner.lastClueId)||partner?.clues?.find(clue=>clue.revealed)||null;
+const actionLocks=partner=>conversation()?.getActionLocks?.(partner?.clues,{tested:Boolean(partner?.tested),abnormal:Boolean(partner?.tested&&partner?.infected)})||{};
+const conversationReady=()=>["buildClues","restoreClues","revealNextClue","revealAllClues","getActionLocks"].every(method=>typeof conversation()?.[method]==="function");
 function restoreConversationClues(profile,rawClues,legacyChat,tested){
   const engine=conversation();
   return engine?.restoreClues?engine.restoreClues(profile,rawClues,legacyChat,tested):[];
 }
 function buildPartner(profile,options={}){
-  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastClueId=clues.some(clue=>clue.id===options.lastClueId)?options.lastClueId:(clues.find(clue=>clue.revealed)?.id||null);
+  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastClueId=clues.some(clue=>clue.revealed&&clue.id===options.lastClueId)?options.lastClueId:(clues.find(clue=>clue.revealed)?.id||null);
   return{profileId:profile.id,avatar:profile.image,x:profile.x,y:profile.y,name:profile.name,gender:profile.gender,flirt:FLIRT_LINES.includes(options.flirt)?options.flirt:FLIRT_LINES[0],clues,lastClueId,infected:profile.infected,tested:Boolean(options.tested),round:options.round};
 }
 
@@ -41,6 +43,14 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("hospital-btn").onclick=hospital;
   $("next-btn").onclick=next;
   $("restart-btn").onclick=start;
+  $("new-game-btn").onclick=prepareNewGame;
+  if(!conversationReady()){
+    $("load-error").classList.remove("hidden");
+    $("start-btn").disabled=false;
+    $("start-btn").textContent="重新載入遊戲";
+    $("start-btn").onclick=()=>window.location.reload();
+    return;
+  }
   game=loadGame();
   configureResumeButton();
 });
@@ -48,7 +58,15 @@ document.addEventListener("DOMContentLoaded",()=>{
 function createGame(){return{schemaVersion:GAME_SCHEMA_VERSION,phase:"round",round:0,score:0,anxiety:0,heat:50,testkits:1,hospitals:1,infected:false,playerGender:$("player-gender").value,partnerGender:$("partner-gender").value,partner:null,log:[],ended:false,result:null}}
 function loadGame(){
   for(const key of ["localStorage","sessionStorage"]){
-    try{const raw=window[key].getItem(STORE),restored=raw?normalizeGame(JSON.parse(raw)):null;if(restored)return restored}catch{}
+    try{
+      const storage=window[key],raw=storage.getItem(STORE);
+      if(!raw)continue;
+      const restored=normalizeGame(JSON.parse(raw));
+      if(restored)return restored;
+      storage.removeItem(STORE);
+    }catch{
+      try{window[key].removeItem(STORE)}catch{}
+    }
   }
   return null;
 }
@@ -89,16 +107,37 @@ function normalizeChaosEvent(raw){
   return event?{...event,appliedSkip:Boolean(raw?.appliedSkip)}:null;
 }
 function configureResumeButton(){
-  if(!game)return;
   const startButton=$("start-btn");
+  const playerGender=$("player-gender"),partnerGender=$("partner-gender"),resumeNote=$("resume-note"),newGameButton=$("new-game-btn");
+  if(!game){
+    playerGender.disabled=false;partnerGender.disabled=false;
+    resumeNote.classList.add("hidden");newGameButton.classList.add("hidden");
+    startButton.textContent="一個人也能開喝";startButton.onclick=start;
+    startButton.disabled=!$("consent-checkbox").checked;
+    return;
+  }
+  playerGender.value=game.playerGender;partnerGender.value=game.partnerGender;
+  playerGender.disabled=true;partnerGender.disabled=true;
+  resumeNote.textContent="本局設定已鎖定；想換設定可開始全新一局。";
+  resumeNote.classList.remove("hidden");newGameButton.classList.remove("hidden");
   $("consent-checkbox").checked=true;
   startButton.disabled=false;
   if(game.ended||game.round>=GAME_CONFIG.roundCount){startButton.textContent="查看上一趟復盤";startButton.onclick=finale;return}
   startButton.textContent=game.phase==="summary"?"繼續下一晚":"繼續上一晚";
   startButton.onclick=renderRound;
 }
+function clearSavedGame(){for(const key of ["localStorage","sessionStorage"]){try{window[key].removeItem(STORE)}catch{}}}
+function prepareNewGame(){
+  if(interactionLocked)return;
+  if(typeof window.confirm==="function"&&!window.confirm("開始全新一局會捨棄目前進度，確定要繼續嗎？"))return;
+  game=null;clearSavedGame();
+  $("consent-checkbox").checked=false;
+  configureResumeButton();
+  show("intro-screen");
+}
 function start(){
   if(interactionLocked)return;
+  if(!$("consent-checkbox").checked){toast("請先確認這是虛構遊戲與現實互動提醒。");return}
   interactionLocked=true;
   game=createGame();
   save();
@@ -156,7 +195,7 @@ function renderRound(){
 function renderRoundControls(){
   const unseen=hiddenClues(game.partner),chatButton=$("chat-btn");
   chatButton.disabled=game.anxiety>=80||unseen.length===0;
-  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 刺探聊天 · 還有 "+unseen.length+" 條":"💬 已經聊到底";
+  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 刺探聊天 · 尚有 "+unseen.length+" 條":"💬 已經聊到底";
   $("test-btn").disabled=game.testkits<1||game.anxiety>=80||game.partner.tested;
   $("hospital-btn").disabled=game.hospitals<1;
   renderActions();
@@ -173,10 +212,20 @@ function renderStats(){
   $("warning").classList.toggle("hidden",game.anxiety<60);
 }
 function renderTags(){
-  if(game.anxiety>=80){$("partner-tags").innerHTML="<span class=\"tag hidden-tag\">線索被心理壓力遮住</span>";return}
+  if(game.anxiety>=80){$("partner-tags").setAttribute("aria-label","線索被心理壓力遮住");$("partner-tags").innerHTML="<span class=\"tag hidden-tag\">線索被心理壓力遮住</span>";return}
   let tags=game.partner.clues.map(clue=>clue.revealed?"<span class=\"tag safe clue-"+escapeHTML(clue.kind)+"\">"+escapeHTML(clue.label)+"</span>":"<span class=\"tag hidden-tag\">❓ 還有一段沒說</span>").join("");
   if(game.partner.tested)tags+=game.partner.infected?"<span class=\"tag risk\">🧪 試紙異常：今晚先停下</span>":"<span class=\"tag safe\">🧪 試紙未見異常</span>";
+  $("partner-tags").setAttribute("aria-label","已知線索");
   $("partner-tags").innerHTML=tags;
+}
+function renderDialogueHistory(){
+  const history=$("chat-history"),list=$("chat-history-list"),summary=history?.querySelector?.("summary");
+  if(!history||!list)return;
+  const clues=game.anxiety>=80?[]:game.partner.clues.filter(clue=>clue.revealed);
+  history.classList.toggle("hidden",clues.length<2);
+  if(clues.length<2)return;
+  if(summary)summary.textContent="已揭露對話（"+clues.length+"）";
+  list.innerHTML=clues.map(clue=>"<li><strong>"+escapeHTML(clue.label)+"</strong><span>"+escapeHTML(clue.dialogue)+"</span></li>").join("");
 }
 function renderDialogue(){
   const card=$("chat-dialogue");
@@ -186,6 +235,7 @@ function renderDialogue(){
     if(label)label.textContent="刺探對話";
     if(state)state.textContent="壓力干擾中";
     if(copy)copy.textContent="你聽得見聲音，卻抓不住意思；先把壓力降下來。";
+    renderDialogueHistory();
     return;
   }
   const clue=currentClue(game.partner),remaining=hiddenClues(game.partner).length;
@@ -193,17 +243,19 @@ function renderDialogue(){
     if(label)label.textContent="🧪 檢測結果";
     if(state)state.textContent="全部線索已攤開";
     if(copy)copy.textContent=game.partner.infected?"試紙顯示異常。今晚先停下，不要把它變成猜測或責備；有疑慮時請尋求專業檢測與照護。":"試紙未見異常；它不是萬用保證，界線、保護和溝通仍然重要。";
+    renderDialogueHistory();
     return;
   }
   if(label)label.textContent=clue?.label||"刺探對話";
-  if(state)state.textContent=remaining?"還有 "+remaining+" 條待刺探":"已完整聊過";
+  if(state)state.textContent=remaining?"尚有 "+remaining+" 條待刺探":"已完整聊過";
   if(copy)copy.textContent=clue?.dialogue||"先從一個不尷尬的問題開始。";
+  renderDialogueHistory();
 }
 function renderActions(){
-  const locks=conversation()?.getActionLocks?.(game.partner.clues)||{};
+  const locks=actionLocks(game.partner);
   $("action-buttons").innerHTML=Object.entries(ACTIONS).filter(([key])=>key!=="hospital").map(([key,action])=>{
-    const lock=locks[key],classes="action-btn "+(key.includes("raw")?"raw ":"")+(lock?"locked":""),copy=lock||action.copy;
-    return"<button class=\""+classes+"\" data-action=\""+key+"\""+(lock?" disabled aria-disabled=\"true\"":"")+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
+    const lock=locks[key],classes="action-btn "+(key.includes("raw")?"raw ":"")+(lock?"locked":""),copy=lock||action.copy,reason=lock?" aria-disabled=\"true\" aria-label=\""+escapeHTML(action.label+"。"+lock)+"\" title=\""+escapeHTML(lock)+"\"":"";
+    return"<button class=\""+classes+"\" data-action=\""+key+"\""+reason+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
   }).join("");
   document.querySelectorAll("[data-action]").forEach(button=>button.onclick=()=>resolve(button.dataset.action));
 }
@@ -253,7 +305,7 @@ function resolve(key){
   if(!beginRoundInteraction())return;
   const action=ACTIONS[key],currentPartner=game.partner;
   if(!action||!currentPartner){unlockInteraction();return}
-  const boundaryLock=conversation()?.getActionLocks?.(currentPartner.clues)?.[key];
+  const boundaryLock=actionLocks(currentPartner)[key];
   if(boundaryLock){renderRoundControls();toast(boundaryLock);unlockInteraction();return}
   let copy=action.copy,transmission=false;
   if(key==="refuse")copy="你選擇先離開。今晚不必把每個邀請都答應。";
@@ -313,7 +365,8 @@ function finale(){
   if(!game)return show("intro-screen");
   const entries=Array.isArray(game.log)?game.log:[],key=endingKey(),ending=ENDINGS[key],exposures=entries.filter(item=>item.transmission),riskCount=entries.filter(item=>item.risk>=20).length,chaosCount=entries.filter(item=>item.event).length;
   const unlockedStories=new Set(entries.map(item=>item.profileId).filter(Boolean)).size;
-  $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;$("finale-image").src=ending.image;$("finale-image").alt=ending.title;$("finale-status").textContent=ending.label;
+  const finaleImage=$("finale-image");
+  $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;finaleImage.src=ending.image;finaleImage.srcset=ending.imageSrcSet||"";finaleImage.sizes="(max-width: 620px) calc(100vw - 32px), min(840px, calc(100vw - 56px))";finaleImage.alt=ending.title;$("finale-status").textContent=ending.label;
   const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":"<span>延遲判決：未觸發</span>";
   $("replay-overview").innerHTML="<span>結局："+escapeHTML(ending.label)+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>設定："+genderLabel(game.playerGender)+" · 遇見"+genderLabel(game.partnerGender)+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
   $("replay-list").innerHTML=entries.map(renderReplayItem).join("");
