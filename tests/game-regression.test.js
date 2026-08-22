@@ -18,7 +18,16 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const GAME_SCRIPTS = ["data.js", "stories.js", "extra-stories.js", "chaos.js", "app.js"];
+const CONVERSATION_SCRIPT = "conversation.js";
+const HAS_CONVERSATION_SCRIPT = fs.existsSync(path.join(ROOT, CONVERSATION_SCRIPT));
+const GAME_SCRIPTS = [
+  "data.js",
+  "stories.js",
+  "extra-stories.js",
+  ...(HAS_CONVERSATION_SCRIPT ? [CONVERSATION_SCRIPT] : []),
+  "chaos.js",
+  "app.js"
+];
 const SCREEN_IDS = ["intro-screen", "round-screen", "summary-screen", "awards-screen"];
 const ELEMENT_IDS = [
   "consent-checkbox", "start-btn", "chat-btn", "test-btn", "hospital-btn", "next-btn", "restart-btn",
@@ -179,6 +188,7 @@ function createHarness({ savedGame = null, randomValues = [] } = {}) {
       finale,
       normalizeGame,
       renderReplayItem,
+      conversation: globalThis.ConversationEngine || window.ConversationEngine || null,
       getGame: () => game,
       setGame: value => { game = value; },
       data: { PARTY_PEOPLE, MALE_STORY_TEMPLATES, FEMALE_STORY_TEMPLATES, MALE_INFECTION_SOURCES, FEMALE_INFECTION_SOURCES, AVATAR_SHEETS, CHAOS_EVENTS, GAME_CONFIG }
@@ -252,15 +262,24 @@ test("chat progress is saved and survives a reload", () => {
   first.api.chat();
   const stateAfterChat = first.api.getGame();
   const saved = first.getSavedGame();
+  const revealedBeforeReload = stateAfterChat.partner.clues
+    .filter(clue => clue.revealed)
+    .map(clue => clue.id);
 
   assert.equal(stateAfterChat.heat, 53);
-  assert.equal(stateAfterChat.partner.chat, true);
+  assert.equal(revealedBeforeReload.length, 2, "one chat should add exactly one conversation clue");
+  assert.ok(stateAfterChat.partner.lastClueId, "the last spoken clue should be persisted for the dialogue card");
   assert.ok(saved, "chat should immediately persist game state");
 
   const restored = createHarness({ savedGame: saved });
   const restoredState = restored.api.getGame();
   assert.equal(restoredState.heat, 53);
-  assert.equal(restoredState.partner?.chat, true);
+  assert.equal(
+    JSON.stringify(restoredState.partner?.clues.filter(clue => clue.revealed).map(clue => clue.id)),
+    JSON.stringify(revealedBeforeReload),
+    "reload must preserve every clue already revealed through chat"
+  );
+  assert.equal(restoredState.partner?.lastClueId, stateAfterChat.partner.lastClueId);
   assert.equal(restoredState.partner?.profileId, originalPartner);
 });
 
@@ -375,4 +394,107 @@ test("legacy or malicious saves cannot inject replay HTML", () => {
   assert.equal(state.log[0].name, harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1").name, "canonical profile must win over stale save fields");
   assert.equal(state.log[0].avatar, harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1").image);
   assert.equal(state.log[1].avatar, "", "untrusted avatar URLs must be discarded");
+});
+
+function createConversationEngine() {
+  const engine = createHarness().api.conversation;
+  assert.ok(engine, "conversation.js should expose the ConversationEngine browser global");
+  return engine;
+}
+
+function createConversationPerson(overrides = {}) {
+  return {
+    id: "female-18",
+    gender: "female",
+    title: "凌晨兩點的換歌權",
+    story: "她把點歌單折成紙飛機，說每一首歌都得先徵得在場的人同意。",
+    ...overrides
+  };
+}
+
+function revealedCount(clues) {
+  return clues.filter(clue => clue.revealed).length;
+}
+
+test("probing reveals one previously hidden conversation clue at a time", () => {
+  const engine = createConversationEngine();
+  const person = createConversationPerson();
+  const clues = engine.buildClues(person);
+  const before = revealedCount(clues);
+
+  assert.equal(clues.length, 4);
+  assert.equal(before, 1, "only the opening should be visible before the first probe");
+  assert.match(clues[0].dialogue, /凌晨兩點的換歌權/);
+
+  const firstReveal = engine.revealNextClue(clues, () => 0);
+  assert.equal(firstReveal.id, "story");
+  assert.equal(revealedCount(clues), before + 1, "one chat must not reveal every clue");
+  assert.equal(clues.find(clue => clue.id === "boundary").revealed, false);
+  assert.equal(clues.find(clue => clue.id === "care").revealed, false);
+
+  const secondReveal = engine.revealNextClue(clues, () => 0);
+  assert.equal(secondReveal.id, "boundary");
+  assert.equal(revealedCount(clues), before + 2, "each subsequent probe reveals exactly one new clue");
+});
+
+test("conversation copy follows the selected character gender", () => {
+  const engine = createConversationEngine();
+  const female = engine.buildClues(createConversationPerson());
+  const male = engine.buildClues(createConversationPerson({ id: "male-18", gender: "male", story: "他把點歌單折成紙飛機。" }));
+
+  assert.match(female[0].dialogue, /她/);
+  assert.match(female[1].label, /她把故事講完整/);
+  assert.match(male[0].dialogue, /他/);
+  assert.match(male[1].label, /他把故事講完整/);
+});
+
+test("once every clue is known, probing produces no further clue", () => {
+  const engine = createConversationEngine();
+  const clues = engine.buildClues(createConversationPerson());
+
+  while (engine.revealNextClue(clues, () => 0)) {
+    // Keep probing until the engine explicitly reports that there is nothing left.
+  }
+
+  const finalSnapshot = clues.map(clue => ({ id: clue.id, revealed: clue.revealed }));
+  assert.ok(clues.every(clue => clue.revealed));
+  assert.equal(engine.revealNextClue(clues, () => 0), null, "the UI can use null to disable the chat control");
+  assert.deepEqual(
+    clues.map(clue => ({ id: clue.id, revealed: clue.revealed })),
+    finalSnapshot,
+    "a completed conversation must stay completed when the player presses chat again"
+  );
+});
+
+test("a test kit reveals all conversation clues without exposing a health verdict", () => {
+  const engine = createConversationEngine();
+  const clues = engine.buildClues(createConversationPerson({ infected: true }));
+
+  const result = engine.revealAllClues(clues);
+  const serialisedClues = JSON.stringify(result);
+
+  assert.strictEqual(result, clues, "the supplied round clue state should be updated in place");
+  assert.ok(result.every(clue => clue.revealed), "testing should reveal the complete conversation record at once");
+  assert.doesNotMatch(serialisedClues, /infected|感染|陽性|陰性|帶原/i, "the conversation system must not turn a test into an infection-status oracle");
+});
+
+test("only revealed boundaries lock the incompatible actions and always preserve leaving", () => {
+  const engine = createConversationEngine();
+  const clues = [
+    { id: "protection", revealed: true, constraint: "condom_only" },
+    { id: "oral", revealed: true, constraint: "no_oral" },
+    { id: "unspoken", revealed: false, constraint: "no_intimacy" }
+  ];
+
+  const locks = engine.getActionLocks(clues);
+  assert.deepEqual(Object.keys(locks).sort(), ["oral_condom", "oral_raw", "sex_raw"]);
+  assert.match(locks.oral_condom, /口腔親密/);
+  assert.match(locks.oral_raw, /有保護/);
+  assert.match(locks.sex_raw, /有保護/);
+  assert.equal(locks.sex_condom, undefined, "an option outside the stated boundaries remains available");
+  assert.equal(locks.refuse, undefined, "leaving must never be locked by another person's boundary");
+
+  const allIntimacyLocked = engine.getActionLocks([{ id: "chat-only", revealed: true, constraint: "no_intimacy" }]);
+  assert.deepEqual(Object.keys(allIntimacyLocked).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
+  assert.match(allIntimacyLocked.sex_condom, /只想聊天/);
 });

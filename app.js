@@ -1,5 +1,5 @@
 const STORE="happy-party-solo-v4";
-const GAME_SCHEMA_VERSION=5;
+const GAME_SCHEMA_VERSION=6;
 const VALID_GENDERS=new Set(["male","female"]);
 const VALID_RESULTS=new Set(Object.keys(ENDINGS));
 const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).reduce((all,sheets)=>all.concat(sheets),[]));
@@ -9,7 +9,6 @@ let interactionLocked=false;
 let storageNoticeShown=false;
 const $=id=>document.getElementById(id);
 const pick=items=>items[Math.floor(Math.random()*items.length)];
-const sample=(items,count)=>{const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]}return copy.slice(0,count)};
 const clamp=value=>Math.max(0,Math.min(100,value));
 const safeInteger=(value,min,max,fallback)=>{const number=Number(value);return Number.isInteger(number)&&number>=min&&number<=max?number:fallback};
 const safePercent=(value,fallback=0)=>{const number=Number(value);return Number.isFinite(number)?clamp(number):fallback};
@@ -18,6 +17,17 @@ const isKnownAvatar=value=>typeof value==="string"&&KNOWN_AVATARS.has(value);
 const safeText=(value,maxLength=220)=>typeof value==="string"?value.slice(0,maxLength):"";
 const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[character]);
 const genderLabel=gender=>gender==="female"?"女":"男";
+const conversation=()=>globalThis.ConversationEngine;
+const hiddenClues=partner=>Array.isArray(partner?.clues)?partner.clues.filter(clue=>!clue.revealed):[];
+const currentClue=partner=>partner?.clues?.find(clue=>clue.id===partner.lastClueId)||partner?.clues?.find(clue=>clue.revealed)||null;
+function restoreConversationClues(profile,rawClues,legacyChat,tested){
+  const engine=conversation();
+  return engine?.restoreClues?engine.restoreClues(profile,rawClues,legacyChat,tested):[];
+}
+function buildPartner(profile,options={}){
+  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastClueId=clues.some(clue=>clue.id===options.lastClueId)?options.lastClueId:(clues.find(clue=>clue.revealed)?.id||null);
+  return{profileId:profile.id,avatar:profile.image,x:profile.x,y:profile.y,name:profile.name,gender:profile.gender,flirt:FLIRT_LINES.includes(options.flirt)?options.flirt:FLIRT_LINES[0],clues,lastClueId,infected:profile.infected,tested:Boolean(options.tested),round:options.round};
+}
 
 document.addEventListener("DOMContentLoaded",()=>{
   $("toast").setAttribute("role","status");
@@ -65,8 +75,7 @@ function normalizeGame(raw){
 function normalizePartner(raw,expectedRound){
   const profile=findPartyProfile(raw);
   if(!profile||safeInteger(raw?.round,1,GAME_CONFIG.roundCount,0)!==expectedRound)return null;
-  const tagTexts=Array.isArray(raw.tags)?raw.tags.map(tag=>safeText(tag?.text,80)).filter(text=>TAG_POOL.some(tag=>tag.text===text)).slice(0,3):[];
-  return{profileId:profile.id,avatar:profile.image,x:profile.x,y:profile.y,name:profile.name,gender:profile.gender,flirt:FLIRT_LINES.includes(raw.flirt)?raw.flirt:FLIRT_LINES[0],tags:tagTexts.length===3?tagTexts.map(text=>({text})):TAG_POOL.slice(0,3),infected:profile.infected,chat:Boolean(raw.chat),tested:Boolean(raw.tested),round:expectedRound};
+  return buildPartner(profile,{flirt:raw.flirt,clues:raw.clues,legacyChat:Boolean(raw.chat),tested:Boolean(raw.tested),lastClueId:safeText(raw.lastClueId,40),round:expectedRound});
 }
 function normalizeRecord(raw){
   if(!raw||typeof raw!=="object")return null;
@@ -121,10 +130,7 @@ function show(id){
 function lastEncounterProfileId(){for(let index=game.log.length-1;index>=0;index--){if(game.log[index].profileId)return game.log[index].profileId}return null}
 function partner(){
   const pool=PARTY_PEOPLE.filter(person=>person.gender===game.partnerGender),lastProfileId=lastEncounterProfileId(),candidates=pool.filter(person=>person.id!==lastProfileId),person=pick(candidates.length?candidates:pool);
-  return{
-    profileId:person.id,avatar:person.image,x:person.x,y:person.y,name:person.name,gender:person.gender,
-    flirt:pick(FLIRT_LINES),tags:sample(TAG_POOL,3),infected:person.infected,chat:false,tested:false,round:game.round+1
-  };
+  return buildPartner(person,{flirt:pick(FLIRT_LINES),round:game.round+1});
 }
 function avatarMarkup(person,className=""){
   const avatar=[person?.avatar,person?.image].find(isKnownAvatar);
@@ -144,11 +150,13 @@ function renderRound(){
   $("partner-avatar").innerHTML=game.anxiety>=80?"？":avatarMarkup(game.partner);
   $("partner-name").textContent=game.anxiety>=80?"看不清楚":game.partner.name;
   $("partner-flirt").textContent=game.anxiety>=80?"「壓力讓所有資訊都糊成一團。」":"「"+game.partner.flirt+"」";
-  renderStats();renderTags();
+  renderStats();renderTags();renderDialogue();
   renderRoundControls();show("round-screen");unlockInteraction();
 }
 function renderRoundControls(){
-  $("chat-btn").disabled=game.anxiety>=80||game.partner.chat;
+  const unseen=hiddenClues(game.partner),chatButton=$("chat-btn");
+  chatButton.disabled=game.anxiety>=80||unseen.length===0;
+  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 刺探聊天 · 還有 "+unseen.length+" 條":"💬 已經聊到底";
   $("test-btn").disabled=game.testkits<1||game.anxiety>=80||game.partner.tested;
   $("hospital-btn").disabled=game.hospitals<1;
   renderActions();
@@ -166,13 +174,37 @@ function renderStats(){
 }
 function renderTags(){
   if(game.anxiety>=80){$("partner-tags").innerHTML="<span class=\"tag hidden-tag\">線索被心理壓力遮住</span>";return}
-  const visibleCount=game.partner.chat?3:2;
-  let tags=game.partner.tags.map((tag,index)=>index<visibleCount?"<span class=\"tag safe\">"+escapeHTML(tag.text)+"</span>":"<span class=\"tag hidden-tag\">再聊聊也許能知道更多</span>").join("");
+  let tags=game.partner.clues.map(clue=>clue.revealed?"<span class=\"tag safe clue-"+escapeHTML(clue.kind)+"\">"+escapeHTML(clue.label)+"</span>":"<span class=\"tag hidden-tag\">❓ 還有一段沒說</span>").join("");
   if(game.partner.tested)tags+=game.partner.infected?"<span class=\"tag risk\">🧪 試紙異常：今晚先停下</span>":"<span class=\"tag safe\">🧪 試紙未見異常</span>";
   $("partner-tags").innerHTML=tags;
 }
+function renderDialogue(){
+  const card=$("chat-dialogue");
+  if(!card)return;
+  const label=card.querySelector(".chat-dialogue-label"),state=card.querySelector(".chat-dialogue-state"),copy=card.querySelector(".chat-dialogue-copy");
+  if(game.anxiety>=80){
+    if(label)label.textContent="刺探對話";
+    if(state)state.textContent="壓力干擾中";
+    if(copy)copy.textContent="你聽得見聲音，卻抓不住意思；先把壓力降下來。";
+    return;
+  }
+  const clue=currentClue(game.partner),remaining=hiddenClues(game.partner).length;
+  if(game.partner.tested){
+    if(label)label.textContent="🧪 檢測結果";
+    if(state)state.textContent="全部線索已攤開";
+    if(copy)copy.textContent=game.partner.infected?"試紙顯示異常。今晚先停下，不要把它變成猜測或責備；有疑慮時請尋求專業檢測與照護。":"試紙未見異常；它不是萬用保證，界線、保護和溝通仍然重要。";
+    return;
+  }
+  if(label)label.textContent=clue?.label||"刺探對話";
+  if(state)state.textContent=remaining?"還有 "+remaining+" 條待刺探":"已完整聊過";
+  if(copy)copy.textContent=clue?.dialogue||"先從一個不尷尬的問題開始。";
+}
 function renderActions(){
-  $("action-buttons").innerHTML=Object.entries(ACTIONS).filter(([key])=>key!=="hospital").map(([key,action])=>"<button class=\"action-btn "+(key.includes("raw")?"raw":"")+"\" data-action=\""+key+"\"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(action.copy)+"</small></button>").join("");
+  const locks=conversation()?.getActionLocks?.(game.partner.clues)||{};
+  $("action-buttons").innerHTML=Object.entries(ACTIONS).filter(([key])=>key!=="hospital").map(([key,action])=>{
+    const lock=locks[key],classes="action-btn "+(key.includes("raw")?"raw ":"")+(lock?"locked":""),copy=lock||action.copy;
+    return"<button class=\""+classes+"\" data-action=\""+key+"\""+(lock?" disabled aria-disabled=\"true\"":"")+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
+  }).join("");
   document.querySelectorAll("[data-action]").forEach(button=>button.onclick=()=>resolve(button.dataset.action));
 }
 
@@ -196,15 +228,17 @@ function unlockInteraction(){
 function chat(){
   if(!beginRoundInteraction())return;
   const currentPartner=game.partner;
-  currentPartner.chat=true;
+  const clue=conversation()?.revealNextClue?.(currentPartner.clues);
+  if(!clue){renderRoundControls();unlockInteraction();return}
+  currentPartner.lastClueId=clue.id;
   game.heat=clamp(game.heat+GAME_CONFIG.chatHeat);
   if(game.heat>=100){const entry=record(PASSIVE_ACTIONS.chatOverload,currentPartner.name,currentPartner,false);resolveTerminalState(entry,currentPartner);return}
-  save();renderStats();renderTags();renderRoundControls();toast("多知道了一點，但壓抑值也往上走。");unlockInteraction();
+  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast("刺探到「"+clue.label+"」，壓抑值也往上走。");unlockInteraction();
 }
 function test(){
   if(!beginRoundInteraction())return;
-  game.testkits--;game.partner.tested=true;
-  save();renderStats();renderTags();renderRoundControls();toast(game.partner.infected?"試紙亮起異常；這是提醒你停下、換人。":"試紙未見異常，但它不是無敵護身符。");unlockInteraction();
+  game.testkits--;game.partner.tested=true;conversation()?.revealAllClues?.(game.partner.clues);
+  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast(game.partner.infected?"試紙亮起異常；這是提醒你停下、換人。":"試紙未見異常，但它不是無敵護身符。");unlockInteraction();
 }
 
 function hospital(){
@@ -219,6 +253,8 @@ function resolve(key){
   if(!beginRoundInteraction())return;
   const action=ACTIONS[key],currentPartner=game.partner;
   if(!action||!currentPartner){unlockInteraction();return}
+  const boundaryLock=conversation()?.getActionLocks?.(currentPartner.clues)?.[key];
+  if(boundaryLock){renderRoundControls();toast(boundaryLock);unlockInteraction();return}
   let copy=action.copy,transmission=false;
   if(key==="refuse")copy="你選擇先離開。今晚不必把每個邀請都答應。";
   else if(currentPartner.infected&&Math.random()<action.risk/100){game.infected=true;transmission=true}
