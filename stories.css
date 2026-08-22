@@ -8,6 +8,8 @@
 .story-unlock-body b{color:#754b57}
 .story-health{padding:8px 9px;border-radius:9px;background:#eaf3ef}
 .story-health.story-risk{background:#fff0f0}
+.story-venue{padding:8px 9px;border:1px solid rgba(68,91,130,.16);border-radius:9px;background:#eef2f8;color:#43566e!important}
+.story-venue b{color:#3d506a!important}
 .story-unlock small{color:#806b72;font-size:.68rem;line-height:1.45}
 @media(max-width:620px){
   .story-unlock summary{min-height:44px;font-size:.82rem}

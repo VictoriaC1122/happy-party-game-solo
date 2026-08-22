@@ -22,7 +22,7 @@ function partner(){
   return{
     profileId:person.id,avatar:person.image,x:person.x,y:person.y,name:person.name,gender:person.gender,
     flirt:pick(FLIRT_LINES),tags:sample(TAG_POOL,3),infected:person.infected,storyTitle:person.title,
-    story:person.story,healthStory:person.healthStory,infectionSource:person.infectionSource,chat:false,tested:false
+    story:person.story,venueCameo:person.venueCameo,healthStory:person.healthStory,infectionSource:person.infectionSource,chat:false,tested:false
   };
 }
 function avatarMarkup(person,className=""){
@@ -96,7 +96,7 @@ function record(action,name,currentPartner,transmission){
   game.score+=action.score;
   const entry={
     round:game.round+1,name,avatar:currentPartner?.avatar,gender:currentPartner?.gender,x:currentPartner?.x,y:currentPartner?.y,
-    profileId:currentPartner?.profileId,storyTitle:currentPartner?.storyTitle,story:currentPartner?.story,
+    profileId:currentPartner?.profileId,storyTitle:currentPartner?.storyTitle,story:currentPartner?.story,venueCameo:currentPartner?.venueCameo,
     healthStory:currentPartner?.healthStory,infectionSource:currentPartner?.infectionSource,
     partnerInfected:currentPartner?.infected,action:action.short,heat:game.heat,anxiety:game.anxiety,risk:action.risk,transmission
   };
@@ -133,7 +133,7 @@ function finale(){
   const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":"<span>延遲判決：未觸發</span>";
   $("replay-overview").innerHTML="<span>結局："+ending.label+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
   $("replay-list").innerHTML=game.log.map(item=>{
-    const libraryProfile=findPartyProfile(item),profile=item.story?item:libraryProfile;
+    const libraryProfile=findPartyProfile(item),profile={...libraryProfile,...item};
     const hasStoredX=isSpriteCoordinate(item.x),hasStoredY=isSpriteCoordinate(item.y);
     const portraitPerson={...libraryProfile,...item,avatar:item.avatar||libraryProfile?.avatar||libraryProfile?.image,x:hasStoredX?item.x:libraryProfile?.x,y:hasStoredY?item.y:libraryProfile?.y};
     const portrait=avatarMarkup(portraitPerson,"replay-avatar")||"<span class='replay-icon'>🏥</span>";
@@ -141,8 +141,10 @@ function finale(){
     const chaos=item.event?" · 突發："+item.event.title+(item.event.skip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"";
     const result=item.transmission?" · 最終揭曉：這一晚觸發感染":"";
     const profileInfected=Boolean(profile?.infected??profile?.partnerInfected);
+    const venue=profile?.venueCameo?"<p class=\"story-venue\"><b>城市夜生活彩蛋｜</b>"+profile.venueCameo+"</p>":"";
+    const venueDisclaimer=profile?.venueCameo?" 店名僅為虛構故事背景，與真實事件、健康資訊、合作或背書無關。":"";
     const story=profile?.story
-      ?"<details class=\"story-unlock\"><summary>🔓 解鎖人物故事 · "+(profile.storyTitle||profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+profile.story+"</p><p class=\"story-health"+(profileInfected?" story-risk":"")+"\"><b>"+(profileInfected?"虛構感染來源｜":"健康背景｜")+"</b>"+(profileInfected?profile.infectionSource:profile.healthStory)+"</p><small>所有角色均為虛構成年人；健康資訊僅為遊戲設定，感染不代表任何人的價值或道德。</small></div></details>"
+      ?"<details class=\"story-unlock\"><summary>🔓 解鎖人物故事 · "+(profile.storyTitle||profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+profile.story+"</p>"+venue+"<p class=\"story-health"+(profileInfected?" story-risk":"")+"\"><b>"+(profileInfected?"虛構感染來源｜":"健康背景｜")+"</b>"+(profileInfected?profile.infectionSource:profile.healthStory)+"</p><small>所有角色均為虛構成年人；健康資訊僅為遊戲設定，感染不代表任何人的價值或道德。"+venueDisclaimer+"</small></div></details>"
       :"";
     return "<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+item.name+" · "+item.action+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+result+"</p>"+story+"</div></article>";
   }).join("");
