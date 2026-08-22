@@ -24,8 +24,8 @@ const GAME_SCRIPTS = [
   "data.js",
   "stories.js",
   "extra-stories.js",
-  ...(HAS_CONVERSATION_SCRIPT ? [CONVERSATION_SCRIPT] : []),
   "chaos.js",
+  ...(HAS_CONVERSATION_SCRIPT ? [CONVERSATION_SCRIPT] : []),
   "app.js"
 ];
 const SCREEN_IDS = ["intro-screen", "round-screen", "summary-screen", "awards-screen"];
@@ -232,7 +232,7 @@ test("character library retains its 200-person, safe-story invariants", () => {
   assert.equal(Object.keys(data.FEMALE_INFECTION_SOURCES).length, 30);
   assert.equal(people.filter(person => person.infected).length, 60);
   assert.ok(people.every(person => person.infected === Boolean(person.infectionSource)));
-  assert.ok(people.every(person => person.story && person.title && person.healthStory));
+  assert.ok(people.every(person => person.story && person.title));
   assert.ok(people.every(person => avatarPaths.has(person.image) && Number.isInteger(person.x) && person.x >= 0 && person.x <= 4 && Number.isInteger(person.y) && person.y >= 0 && person.y <= 4));
   assert.equal(venues.length, 12);
   assert.equal(new Set(venues.map(person => person.venueCameo)).size, 12);
@@ -322,7 +322,7 @@ test("chat reaching 100% heat ends the game immediately", () => {
   assert.equal(state.result, "urge");
   assert.equal(state.phase, "finale");
   assert.equal(state.log.length, 1);
-  assert.match(state.log[0].action, /聊天後壓抑失控/);
+  assert.match(state.log[0].action, /刺探後壓抑失控/);
 });
 
 test("a skip chaos event writes an explicit timeline row", () => {
@@ -398,6 +398,56 @@ test("legacy or malicious saves cannot inject replay HTML", () => {
   assert.equal(state.log[1].avatar, "", "untrusted avatar URLs must be discarded");
 });
 
+test("final replay keeps full stories but shows the safety note only once", () => {
+  const harness = createHarness();
+  const healthy = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
+  const infected = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
+  const entry = (profile, round) => ({
+    kind: "encounter",
+    round,
+    name: profile.name,
+    avatar: profile.image,
+    gender: profile.gender,
+    x: profile.x,
+    y: profile.y,
+    profileId: profile.id,
+    partnerInfected: profile.infected,
+    action: "換一個",
+    heat: 50,
+    anxiety: 0,
+    risk: 0,
+    transmission: false,
+    event: null,
+    skipReason: null
+  });
+  harness.api.setGame({
+    schemaVersion: 6,
+    phase: "finale",
+    round: 2,
+    score: 2,
+    anxiety: 0,
+    heat: 50,
+    testkits: 1,
+    hospitals: 1,
+    infected: false,
+    playerGender: "female",
+    partnerGender: "male",
+    partner: null,
+    log: [entry(healthy, 1), entry(infected, 2)],
+    ended: true,
+    result: "unfinished"
+  });
+
+  harness.api.finale();
+  const overview = harness.element("replay-overview").innerHTML;
+  const replay = harness.element("replay-list").innerHTML;
+  assert.equal((overview.match(/人物、事件與健康設定皆為虛構/g) || []).length, 1);
+  assert.match(replay, new RegExp(healthy.title));
+  assert.match(replay, new RegExp(infected.title));
+  assert.doesNotMatch(replay, /角色設定：|健康背景｜/, "generic healthy lectures should not repeat inside every profile");
+  assert.ok(replay.includes(infected.infectionSource), "an infected profile should still unlock its delayed backstory");
+});
+
 function createConversationEngine() {
   const engine = createHarness().api.conversation;
   assert.ok(engine, "conversation.js should expose the ConversationEngine browser global");
@@ -418,25 +468,20 @@ function revealedCount(clues) {
   return clues.filter(clue => clue.revealed).length;
 }
 
-test("probing reveals one previously hidden conversation clue at a time", () => {
+test("probing reveals the sole hidden conversation clue in one pass", () => {
   const engine = createConversationEngine();
   const person = createConversationPerson();
   const clues = engine.buildClues(person);
   const before = revealedCount(clues);
 
-  assert.equal(clues.length, 4);
+  assert.equal(clues.length, 2);
   assert.equal(before, 1, "only the opening should be visible before the first probe");
-  assert.match(clues[0].dialogue, /凌晨兩點的換歌權/);
+  assert.match(clues[0].label, /凌晨兩點的換歌權/);
 
   const firstReveal = engine.revealNextClue(clues, () => 0);
-  assert.equal(firstReveal.id, "story");
-  assert.equal(revealedCount(clues), before + 1, "one chat must not reveal every clue");
-  assert.equal(clues.find(clue => clue.id === "boundary").revealed, false);
-  assert.equal(clues.find(clue => clue.id === "care").revealed, false);
-
-  const secondReveal = engine.revealNextClue(clues, () => 0);
-  assert.equal(secondReveal.id, "boundary");
-  assert.equal(revealedCount(clues), before + 2, "each subsequent probe reveals exactly one new clue");
+  assert.ok(["boundary", "story"].includes(firstReveal.id));
+  assert.equal(revealedCount(clues), clues.length, "one probe should uncover the only hidden clue");
+  assert.equal(engine.revealNextClue(clues, () => 0), null, "each table can only be probed once");
 });
 
 test("conversation copy follows the selected character gender", () => {
@@ -445,9 +490,34 @@ test("conversation copy follows the selected character gender", () => {
   const male = engine.buildClues(createConversationPerson({ id: "male-18", gender: "male", story: "他把點歌單折成紙飛機。" }));
 
   assert.match(female[0].dialogue, /她/);
-  assert.match(female[1].label, /她把故事講完整/);
+  assert.match(female[1].label, /她/);
   assert.match(male[0].dialogue, /他/);
-  assert.match(male[1].label, /他把故事講完整/);
+  assert.match(male[1].label, /他/);
+});
+
+test("round clues keep the complete profile story for finale replay", () => {
+  const engine = createConversationEngine();
+  const person = createConversationPerson();
+  const healthyClues = engine.buildClues({ ...person, infected: false });
+  const infectedClues = engine.buildClues({ ...person, infected: true });
+  const serialised = JSON.stringify(healthyClues);
+
+  assert.doesNotMatch(serialised, new RegExp(person.story.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the complete profile story should stay locked until replay");
+  assert.deepEqual(healthyClues, infectedClues, "conversation clues must not hint at infection status");
+  assert.doesNotMatch(serialised, /重要的是|需要的是|專業資訊|照護與支持|角色設定/);
+});
+
+test("all 200 profiles expose exactly one short hidden clue per table", () => {
+  const harness = createHarness();
+  const engine = harness.api.conversation;
+
+  harness.api.data.PARTY_PEOPLE.forEach(person => {
+    const clues = engine.buildClues(person);
+    assert.equal(clues.length, 2, `${person.id} should have one opening and one hidden clue`);
+    assert.equal(clues.filter(clue => !clue.revealed).length, 1, `${person.id} should need only one probe`);
+    assert.ok(clues.every(clue => clue.dialogue.length <= 76), `${person.id} round copy should stay concise`);
+    assert.ok(clues.every(clue => clue.dialogue !== person.story), `${person.id} full story should remain a replay unlock`);
+  });
 });
 
 test("once every clue is known, probing produces no further clue", () => {
@@ -502,13 +572,42 @@ test("a saved hidden last clue cannot become the active dialogue", () => {
       profileId: profile.id,
       round: 1,
       clues: [{ id: "opening", revealed: true }],
-      lastClueId: "care",
+      lastClueId: "boundary",
       tested: false
     }
   });
 
   assert.equal(normalized.partner.lastClueId, "opening");
-  assert.equal(normalized.partner.clues.find(clue => clue.id === "care").revealed, false);
+  assert.equal(normalized.partner.clues.find(clue => clue.id === "boundary").revealed, false);
+});
+
+test("legacy multi-part chat progress upgrades to the new single clue", () => {
+  const harness = createHarness();
+  const profile = harness.api.data.PARTY_PEOPLE.find(person => {
+    const hidden = harness.api.conversation.buildClues(person)[1];
+    return hidden.id === "boundary";
+  });
+  const normalized = harness.api.normalizeGame({
+    round: 0,
+    phase: "round",
+    playerGender: "female",
+    partnerGender: profile.gender,
+    partner: {
+      profileId: profile.id,
+      round: 1,
+      clues: [
+        { id: "opening", revealed: true },
+        { id: "story", revealed: true },
+        { id: "scene", revealed: false },
+        { id: "boundary", revealed: false }
+      ],
+      lastClueId: "story",
+      tested: false
+    }
+  });
+
+  assert.ok(normalized.partner.clues.every(clue => clue.revealed), "a player who already chatted should not pay again after the upgrade");
+  assert.equal(normalized.partner.lastClueId, "boundary");
 });
 
 test("an abnormal tested partner cannot advance an intimate action through direct resolve", () => {
@@ -516,7 +615,7 @@ test("an abnormal tested partner cannot advance an intimate action through direc
   const engine = harness.api.conversation;
   const profile = harness.api.data.PARTY_PEOPLE.find(person => {
     const boundary = engine.buildClues(person).find(clue => clue.id === "boundary");
-    return person.infected && !boundary.constraint;
+    return person.infected && !boundary;
   });
   assert.ok(profile, "the library should include an infected profile with no separate boundary lock");
   const clues = engine.buildClues(profile);
@@ -542,7 +641,7 @@ test("an abnormal tested partner cannot advance an intimate action through direc
       gender: profile.gender,
       flirt: "測試",
       clues,
-      lastClueId: "care",
+      lastClueId: clues[1].id,
       infected: true,
       tested: true,
       round: 1
@@ -553,6 +652,7 @@ test("an abnormal tested partner cannot advance an intimate action through direc
   });
 
   harness.api.renderActions();
+  assert.match(harness.element("action-buttons").innerHTML, /<button type="button"/);
   assert.match(harness.element("action-buttons").innerHTML, /aria-disabled=\"true\"/);
   assert.doesNotMatch(harness.element("action-buttons").innerHTML, /disabled aria-disabled/);
   harness.api.resolve("sex_condom");
@@ -581,7 +681,7 @@ test("only revealed boundaries lock the incompatible actions and always preserve
 
   const allIntimacyLocked = engine.getActionLocks([{ id: "chat-only", revealed: true, constraint: "no_intimacy" }]);
   assert.deepEqual(Object.keys(allIntimacyLocked).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
-  assert.match(allIntimacyLocked.sex_condom, /只想聊天/);
+  assert.match(allIntimacyLocked.sex_condom, /今晚只聊天/);
 });
 
 test("the production document contains every required interactive mount point", () => {

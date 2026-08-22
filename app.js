@@ -3,7 +3,7 @@ const GAME_SCHEMA_VERSION=6;
 const VALID_GENDERS=new Set(["male","female"]);
 const VALID_RESULTS=new Set(Object.keys(ENDINGS));
 const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).reduce((all,sheets)=>all.concat(sheets),["./assets/male-avatars-a.png","./assets/male-avatars-b.png","./assets/female-avatars-a.png","./assets/female-avatars-b.png"]));
-const PASSIVE_ACTIONS={chatOverload:{short:"聊天後壓抑失控",score:0,risk:0}};
+const PASSIVE_ACTIONS={chatOverload:{short:"刺探後壓抑失控",score:0,risk:0}};
 let game;
 let interactionLocked=false;
 let storageNoticeShown=false;
@@ -27,7 +27,7 @@ function restoreConversationClues(profile,rawClues,legacyChat,tested){
   return engine?.restoreClues?engine.restoreClues(profile,rawClues,legacyChat,tested):[];
 }
 function buildPartner(profile,options={}){
-  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastClueId=clues.some(clue=>clue.revealed&&clue.id===options.lastClueId)?options.lastClueId:(clues.find(clue=>clue.revealed)?.id||null);
+  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastRevealed=clues.slice().reverse().find(clue=>clue.revealed),lastClueId=clues.some(clue=>clue.revealed&&clue.id===options.lastClueId)?options.lastClueId:(lastRevealed?.id||null);
   return{profileId:profile.id,avatar:profile.image,x:profile.x,y:profile.y,name:profile.name,gender:profile.gender,flirt:FLIRT_LINES.includes(options.flirt)?options.flirt:FLIRT_LINES[0],clues,lastClueId,infected:profile.infected,tested:Boolean(options.tested),round:options.round};
 }
 
@@ -195,7 +195,7 @@ function renderRound(){
 function renderRoundControls(){
   const unseen=hiddenClues(game.partner),chatButton=$("chat-btn");
   chatButton.disabled=game.anxiety>=80||unseen.length===0;
-  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 刺探聊天 · 尚有 "+unseen.length+" 條":"💬 已經聊到底";
+  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 試探一次 · 壓抑 +3":"💬 已經聊到底";
   $("test-btn").disabled=game.testkits<1||game.anxiety>=80||game.partner.tested;
   $("hospital-btn").disabled=game.hospitals<1;
   renderActions();
@@ -208,12 +208,12 @@ function renderStats(){
   const anxietyMeter=$("anxiety-bar").parentElement;
   anxietyMeter.setAttribute("role","progressbar");anxietyMeter.setAttribute("aria-label","心理壓力");anxietyMeter.setAttribute("aria-valuemin","0");anxietyMeter.setAttribute("aria-valuemax","100");anxietyMeter.setAttribute("aria-valuenow",game.anxiety);
   $("score-value").textContent=game.score;$("testkit-value").textContent="試紙 "+game.testkits+" · 醫院 "+game.hospitals;
-  $("warning").textContent=game.anxiety>=80?"心理壓力很高：人物與線索開始模糊。壓力到 100% 會直接結束。":"高風險後不會立刻知道是否感染；只有醫院檢查或第 10 晚才會揭曉。";
+  $("warning").textContent=game.anxiety>=80?"雜訊蓋過人聲；壓力到 100% 會直接結束。":"高風險的答案不在今晚：醫院或第 10 晚才翻牌。";
   $("warning").classList.toggle("hidden",game.anxiety<60);
 }
 function renderTags(){
   if(game.anxiety>=80){$("partner-tags").setAttribute("aria-label","線索被心理壓力遮住");$("partner-tags").innerHTML="<span class=\"tag hidden-tag\">線索被心理壓力遮住</span>";return}
-  let tags=game.partner.clues.map(clue=>clue.revealed?"<span class=\"tag safe clue-"+escapeHTML(clue.kind)+"\">"+escapeHTML(clue.label)+"</span>":"<span class=\"tag hidden-tag\">❓ 還有一段沒說</span>").join("");
+  let tags=game.partner.clues.map(clue=>clue.revealed?"<span class=\"tag safe clue-"+escapeHTML(clue.kind)+"\">"+escapeHTML(clue.label)+"</span>":"<span class=\"tag hidden-tag\">❓ 隱藏情報</span>").join("");
   if(game.partner.tested)tags+=game.partner.infected?"<span class=\"tag risk\">🧪 試紙異常：今晚先停下</span>":"<span class=\"tag safe\">🧪 試紙未見異常</span>";
   $("partner-tags").setAttribute("aria-label","已知線索");
   $("partner-tags").innerHTML=tags;
@@ -224,7 +224,7 @@ function renderDialogueHistory(){
   const clues=game.anxiety>=80?[]:game.partner.clues.filter(clue=>clue.revealed);
   history.classList.toggle("hidden",clues.length<2);
   if(clues.length<2)return;
-  if(summary)summary.textContent="已揭露對話（"+clues.length+"）";
+  if(summary)summary.textContent="今晚翻出的情報（"+clues.length+"）";
   list.innerHTML=clues.map(clue=>"<li><strong>"+escapeHTML(clue.label)+"</strong><span>"+escapeHTML(clue.dialogue)+"</span></li>").join("");
 }
 function renderDialogue(){
@@ -241,21 +241,21 @@ function renderDialogue(){
   const clue=currentClue(game.partner),remaining=hiddenClues(game.partner).length;
   if(game.partner.tested){
     if(label)label.textContent="🧪 檢測結果";
-    if(state)state.textContent="全部線索已攤開";
-    if(copy)copy.textContent=game.partner.infected?"試紙顯示異常。今晚先停下，不要把它變成猜測或責備；有疑慮時請尋求專業檢測與照護。":"試紙未見異常；它不是萬用保證，界線、保護和溝通仍然重要。";
+    if(state)state.textContent="底牌先翻開";
+    if(copy)copy.textContent=game.partner.infected?"第二條線慢慢浮出來。桌上安靜了一拍——今晚到這裡。":"只有控制線。你把試紙收回口袋；其中一個謎暫時安靜了。";
     renderDialogueHistory();
     return;
   }
   if(label)label.textContent=clue?.label||"刺探對話";
-  if(state)state.textContent=remaining?"尚有 "+remaining+" 條待刺探":"已完整聊過";
-  if(copy)copy.textContent=clue?.dialogue||"先從一個不尷尬的問題開始。";
+  if(state)state.textContent=remaining?"還藏著一條":"情報已翻開";
+  if(copy)copy.textContent=clue?.dialogue||"你可以花 3% 壓抑，換一條今晚的情報。";
   renderDialogueHistory();
 }
 function renderActions(){
   const locks=actionLocks(game.partner);
   $("action-buttons").innerHTML=Object.entries(ACTIONS).filter(([key])=>key!=="hospital").map(([key,action])=>{
     const lock=locks[key],classes="action-btn "+(key.includes("raw")?"raw ":"")+(lock?"locked":""),copy=lock||action.copy,reason=lock?" aria-disabled=\"true\" aria-label=\""+escapeHTML(action.label+"。"+lock)+"\" title=\""+escapeHTML(lock)+"\"":"";
-    return"<button class=\""+classes+"\" data-action=\""+key+"\""+reason+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
+    return"<button type=\"button\" class=\""+classes+"\" data-action=\""+key+"\""+reason+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
   }).join("");
   document.querySelectorAll("[data-action]").forEach(button=>button.onclick=()=>resolve(button.dataset.action));
 }
@@ -285,12 +285,12 @@ function chat(){
   currentPartner.lastClueId=clue.id;
   game.heat=clamp(game.heat+GAME_CONFIG.chatHeat);
   if(game.heat>=100){const entry=record(PASSIVE_ACTIONS.chatOverload,currentPartner.name,currentPartner,false);resolveTerminalState(entry,currentPartner);return}
-  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast("刺探到「"+clue.label+"」，壓抑值也往上走。");unlockInteraction();
+  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast("套出「"+clue.label+"」。壓抑 +3。");unlockInteraction();
 }
 function test(){
   if(!beginRoundInteraction())return;
   game.testkits--;game.partner.tested=true;conversation()?.revealAllClues?.(game.partner.clues);
-  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast(game.partner.infected?"試紙亮起異常；這是提醒你停下、換人。":"試紙未見異常，但它不是無敵護身符。");unlockInteraction();
+  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast(game.partner.infected?"第二條線浮出來。今晚到這裡。":"只有控制線；謎少了一個。");unlockInteraction();
 }
 
 function hospital(){
@@ -299,7 +299,7 @@ function hospital(){
   const entry=record(ACTIONS.hospital,"醫院檢查",null,false);
   if(game.infected)return end("hospital_positive");
   if(resolveTerminalState(entry,null))return;
-  showSummary(entry,"檢查結果：目前未檢出異常","心理壓力已清空；代價是壓抑值上升，今晚也就此結束。","去醫院","壓抑值 +20 · 壓力歸零",null);
+  showSummary(entry,"白光下沒有翻出異常","壓力歸零，壓抑 +20；這一晚留在候診室。","去醫院","壓抑 +20 · 壓力歸零",null);
 }
 function resolve(key){
   if(!beginRoundInteraction())return;
@@ -308,15 +308,15 @@ function resolve(key){
   const boundaryLock=actionLocks(currentPartner)[key];
   if(boundaryLock){renderRoundControls();toast(boundaryLock);unlockInteraction();return}
   let copy=action.copy,transmission=false;
-  if(key==="refuse")copy="你選擇先離開。今晚不必把每個邀請都答應。";
+  if(key==="refuse")copy="你把杯墊推回去。對方挑了挑眉，下一桌還在等。";
   else if(currentPartner.infected&&Math.random()<action.risk/100){game.infected=true;transmission=true}
   game.heat=clamp(game.heat+action.heat);game.anxiety=clamp(game.anxiety+action.anxiety);
   const entry=record(action,currentPartner.name,currentPartner,transmission);
   if(resolveTerminalState(entry,currentPartner))return;
   const chaos=applyChaos(entry);
   if(resolveTerminalState(entry,currentPartner))return;
-  const body=key==="refuse"?copy:(action.risk>=20?"高風險不會立刻揭曉結果。你只能帶著疑慮，繼續把這一晚走完。":copy);
-  showSummary(entry,chaos?chaos.title:"這一晚先記下了",body+(chaos?" "+chaos.text:""),action.short,(action.score>=0?"+":"")+action.score+" 生存分 · 壓力 "+(action.anxiety>=0?"+":"")+action.anxiety,chaos);
+  const body=key==="refuse"?copy:(action.risk>=20?"燈光照不出答案。這一晚先封存，真相留給醫院或第 10 晚。":copy);
+  showSummary(entry,chaos?chaos.title:"這一晚先封存",body+(chaos?" "+chaos.text:""),action.short,(action.score>=0?"+":"")+action.score+" 生存分 · 壓力 "+(action.anxiety>=0?"+":"")+action.anxiety,chaos);
 }
 function resolveTerminalState(entry,currentPartner){
   if(game.heat>=100){lossOfControl(entry,currentPartner);return true}
@@ -368,12 +368,12 @@ function finale(){
   const finaleImage=$("finale-image");
   $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;finaleImage.src=ending.image;finaleImage.srcset=ending.imageSrcSet||"";finaleImage.sizes="(max-width: 620px) calc(100vw - 32px), min(840px, calc(100vw - 56px))";finaleImage.alt=ending.title;$("finale-status").textContent=ending.label;
   const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":"<span>延遲判決：未觸發</span>";
-  $("replay-overview").innerHTML="<span>結局："+escapeHTML(ending.label)+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>設定："+genderLabel(game.playerGender)+" · 遇見"+genderLabel(game.partnerGender)+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed;
+  $("replay-overview").innerHTML="<span>結局："+escapeHTML(ending.label)+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>高風險選擇："+riskCount+"</span><span>設定："+genderLabel(game.playerGender)+" · 遇見"+genderLabel(game.partnerGender)+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed+"<p class=\"replay-disclaimer\">人物、事件與健康設定皆為虛構；店名只作城市場景彩蛋。感染不是價值判斷，現實若有疑慮請尋求專業檢測與醫療協助。</p>";
   $("replay-list").innerHTML=entries.map(renderReplayItem).join("");
   game.ended=true;game.phase="finale";save();show("awards-screen");unlockInteraction();
 }
 function renderReplayItem(item){
-  const profile=findPartyProfile(item),isSkipped=item.kind==="skipped",portrait=isSkipped?"<span class=\"replay-icon\" aria-hidden=\"true\">🎲</span>":avatarMarkup(profile||item,"replay-avatar")||"<span class=\"replay-icon\" aria-hidden=\"true\">🏥</span>",name=profile?.name||safeText(item.name,80)||"未記錄對象",action=safeText(item.action,110)||"未記錄行動",risk=item.risk?" · 風險 "+item.risk+"%":"",chaos=item.event?" · 突發："+escapeHTML(item.event.title)+(item.event.appliedSkip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"",skipped=isSkipped&&item.skipReason?" · 突發快轉："+escapeHTML(item.skipReason.title):"",result=item.transmission?" · 最終揭曉：這一晚觸發感染":"",profileInfected=Boolean(profile?.infected??item.partnerInfected),venue=profile?.venueCameo?"<p class=\"story-venue\"><b>城市夜生活彩蛋｜</b>"+escapeHTML(profile.venueCameo)+"</p>":"",healthText=profile?(profileInfected?profile.infectionSource:profile.healthStory):"",health=healthText?"<p class=\"story-health"+(profileInfected?" story-risk":"")+"\"><b>"+(profileInfected?"虛構感染來源｜":"健康背景｜")+"</b>"+escapeHTML(healthText)+"</p>":"",venueDisclaimer=profile?.venueCameo?" 店名僅為虛構故事背景，與真實事件、健康資訊、合作或背書無關。":"",story=profile?.story?"<details class=\"story-unlock\"><summary>🔓 解鎖人物故事 · "+escapeHTML(profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+escapeHTML(profile.story)+"</p>"+venue+health+"<small>所有角色均為虛構成年人；健康資訊僅為遊戲設定，感染不代表任何人的價值或道德。"+venueDisclaimer+"</small></div></details>":"";
+  const profile=findPartyProfile(item),isSkipped=item.kind==="skipped",portrait=isSkipped?"<span class=\"replay-icon\" aria-hidden=\"true\">🎲</span>":avatarMarkup(profile||item,"replay-avatar")||"<span class=\"replay-icon\" aria-hidden=\"true\">🏥</span>",name=profile?.name||safeText(item.name,80)||"未記錄對象",action=safeText(item.action,110)||"未記錄行動",risk=item.risk?" · 風險 "+item.risk+"%":"",chaos=item.event?" · 突發："+escapeHTML(item.event.title)+(item.event.appliedSkip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"",skipped=isSkipped&&item.skipReason?" · 突發快轉："+escapeHTML(item.skipReason.title):"",result=item.transmission?" · 最終揭曉：這一晚觸發感染":"",profileInfected=Boolean(profile?.infected??item.partnerInfected),venue=profile?.venueCameo?"<p class=\"story-venue\"><b>城市夜生活彩蛋｜</b>"+escapeHTML(profile.venueCameo)+"</p>":"",health=profile?(profileInfected?"<p class=\"story-health story-risk\"><b>延遲真相｜</b>"+escapeHTML(profile.infectionSource)+"</p>":"<p class=\"story-health\"><b>最終狀態｜</b>未發現感染。</p>"):"",story=profile?.story?"<details class=\"story-unlock\"><summary>🔓 真相補完 · "+escapeHTML(profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+escapeHTML(profile.story)+"</p>"+venue+health+"</div></details>":"";
   return"<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+escapeHTML(name)+" · "+escapeHTML(action)+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+skipped+result+"</p>"+story+"</div></article>";
 }
 function toast(text){$("toast").textContent=text;$("toast").classList.remove("hidden");clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").classList.add("hidden"),3000)}

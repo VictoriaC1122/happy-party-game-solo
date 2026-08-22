@@ -284,6 +284,18 @@ body.gameplay-active .app-shell {
   margin-left: auto;
 }
 
+.replay-disclaimer {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #8a5a68;
+  border-radius: 8px;
+  color: #5f555a;
+  background: rgba(255, 255, 255, .58);
+  font-size: .76rem;
+  line-height: 1.55;
+}
+
 .finale-art {
   content-visibility: auto;
 }
@@ -453,6 +465,11 @@ body.gameplay-active .app-shell {
   .replay-overview span,
   .replay-item p {
     font-size: .75rem;
+  }
+
+  .replay-disclaimer {
+    grid-column: 1 / -1;
+    font-size: .74rem;
   }
 }
 
