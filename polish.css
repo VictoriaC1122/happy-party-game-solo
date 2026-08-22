@@ -159,10 +159,6 @@ h2[tabindex="-1"]:focus-visible {
   padding: 0 12px 12px;
 }
 
-.game-guide-toggle .education-callout {
-  margin: 0 12px 12px;
-}
-
 .eyebrow {
   color: var(--eyebrow);
 }
@@ -294,10 +290,6 @@ body.gameplay-active .app-shell {
   background: rgba(255, 255, 255, .58);
   font-size: .76rem;
   line-height: 1.55;
-}
-
-.finale-art {
-  content-visibility: auto;
 }
 
 .noscript-notice {
@@ -484,7 +476,7 @@ body.gameplay-active .app-shell {
 
   .stat-grid span,
   .stat-grid small {
-    font-size: .68rem;
+    font-size: .72rem;
   }
 
   .chat-dialogue-state {
@@ -492,7 +484,7 @@ body.gameplay-active .app-shell {
   }
 
   .stat-grid article:last-child small {
-    font-size: .7rem;
+    font-size: .72rem;
   }
 
   .panel-head .phase-pill {

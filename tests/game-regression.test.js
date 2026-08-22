@@ -187,6 +187,7 @@ function createHarness({ savedGame = null, randomValues = [] } = {}) {
       renderRound,
       renderActions,
       applyChaos,
+      lossOfControl,
       finale,
       normalizeGame,
       renderReplayItem,
@@ -226,6 +227,10 @@ test("character library retains its 200-person, safe-story invariants", () => {
   assert.equal(new Set(people.map(person => `${person.gender}:${person.name}`)).size, 200);
   assert.equal(new Set(people.map(person => person.title)).size, 200);
   assert.equal(new Set(people.map(person => person.story)).size, 200);
+  assert.equal(data.AVATAR_SHEETS.male.length, 4);
+  assert.equal(data.AVATAR_SHEETS.female.length, 4);
+  assert.equal(new Set(people.map(person => `${person.image}:${person.x}:${person.y}`)).size, 200);
+  assert.ok(Object.values(data.AVATAR_SHEETS).flat().every(asset => fs.existsSync(path.join(ROOT, asset))));
   assert.equal(data.MALE_STORY_TEMPLATES.length, 100);
   assert.equal(data.FEMALE_STORY_TEMPLATES.length, 100);
   assert.equal(Object.keys(data.MALE_INFECTION_SOURCES).length, 30);
@@ -254,6 +259,21 @@ test("a started round persists and restores the same partner", () => {
 
   restored.api.renderRound();
   assert.equal(restored.api.getGame().partner?.profileId, beforeReload.partner.profileId, "resume must not reroll the active partner");
+});
+
+test("a ten-night run does not repeat a character before the pool is exhausted", () => {
+  const harness = createHarness({ randomValues: Array(80).fill(0.5) });
+  harness.api.start();
+  const profileIds = [];
+
+  for (let night = 0; night < 10; night += 1) {
+    profileIds.push(harness.api.getGame().partner.profileId);
+    harness.api.resolve("oral_condom");
+    if (night < 9) harness.api.next();
+  }
+
+  assert.equal(profileIds.length, 10);
+  assert.equal(new Set(profileIds).size, 10);
 });
 
 test("chat progress is saved and survives a reload", () => {
@@ -325,6 +345,169 @@ test("chat reaching 100% heat ends the game immediately", () => {
   assert.match(state.log[0].action, /刺探後壓抑失控/);
 });
 
+test("leaving at 100% heat ends the run without rewriting leaving as intimacy", () => {
+  const harness = createHarness();
+  harness.api.start();
+  harness.api.getGame().heat = 92;
+
+  harness.api.resolve("refuse");
+  const state = harness.api.getGame();
+  const entry = state.log[0];
+
+  assert.equal(state.heat, 100);
+  assert.equal(state.result, "urge");
+  assert.equal(entry.risk, 0);
+  assert.equal(entry.transmission, false);
+  assert.match(entry.action, /^換一個/);
+  assert.match(entry.action, /確實離開/);
+  assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
+  assert.doesNotMatch(harness.element("finale-body").textContent, /系統替你抽|高風險行動/);
+});
+
+test("a hospital visit that fills heat records only the completed examination", () => {
+  const harness = createHarness();
+  harness.api.start();
+  harness.api.getGame().heat = 80;
+
+  harness.api.hospital();
+  const state = harness.api.getGame();
+  const entry = state.log[0];
+
+  assert.equal(state.heat, 100);
+  assert.equal(state.result, "urge");
+  assert.equal(entry.risk, 0);
+  assert.equal(entry.transmission, false);
+  assert.match(entry.action, /^去醫院 → 檢查完成/);
+  assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
+  assert.doesNotMatch(harness.element("finale-body").textContent, /系統替你抽|高風險行動/);
+});
+
+test("loss of control respects revealed boundaries and abnormal tests", () => {
+  const scenarios = [
+    { label: "revealed no-intimacy boundary", tested: false, clues: [{ id: "boundary", revealed: true, constraint: "no_intimacy" }] },
+    { label: "abnormal test", tested: true, clues: [] }
+  ];
+
+  scenarios.forEach(scenario => {
+    const harness = createHarness();
+    const profile = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
+    const partner = {
+      profileId: profile.id,
+      avatar: profile.image,
+      x: profile.x,
+      y: profile.y,
+      name: profile.name,
+      gender: profile.gender,
+      infected: true,
+      tested: scenario.tested,
+      clues: scenario.clues,
+      round: 1
+    };
+    const entry = {
+      kind: "encounter",
+      round: 1,
+      name: profile.name,
+      profileId: profile.id,
+      action: "刺探後壓抑失控",
+      heat: 100,
+      anxiety: 0,
+      risk: 0,
+      transmission: false,
+      partnerInfected: true,
+      event: null,
+      skipReason: null
+    };
+    harness.api.setGame({
+      schemaVersion: 7,
+      phase: "summary",
+      round: 1,
+      score: 0,
+      anxiety: 0,
+      heat: 100,
+      testkits: 0,
+      hospitals: 1,
+      infected: false,
+      playerGender: "female",
+      partnerGender: profile.gender,
+      partner,
+      log: [entry],
+      ended: false,
+      result: null
+    });
+    harness.setRandomValues([0, 0]);
+
+    harness.api.lossOfControl(entry, partner);
+    const state = harness.api.getGame();
+
+    assert.equal(state.infected, false, `${scenario.label} must not create an exposure`);
+    assert.equal(entry.risk, 0, `${scenario.label} must not gain a forced risk`);
+    assert.equal(entry.transmission, false, `${scenario.label} must not transmit`);
+    assert.match(entry.action, /沒有追加親密行動/);
+    assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
+  });
+});
+
+test("loss of control only chooses an action allowed by the revealed boundary", () => {
+  const scenarios = [
+    { constraint: "no_oral", expected: "無套性交", forbidden: "無套口交" },
+    { constraint: "no_sex", expected: "無套口交", forbidden: "無套性交" }
+  ];
+
+  scenarios.forEach(scenario => {
+    const harness = createHarness();
+    const profile = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
+    const partner = {
+      profileId: profile.id,
+      avatar: profile.image,
+      x: profile.x,
+      y: profile.y,
+      name: profile.name,
+      gender: profile.gender,
+      infected: false,
+      tested: false,
+      clues: [{ id: "boundary", revealed: true, constraint: scenario.constraint }],
+      round: 1
+    };
+    const entry = {
+      kind: "encounter",
+      round: 1,
+      name: profile.name,
+      profileId: profile.id,
+      action: "刺探後壓抑失控",
+      heat: 100,
+      anxiety: 0,
+      risk: 0,
+      transmission: false,
+      partnerInfected: false,
+      event: null,
+      skipReason: null
+    };
+    harness.api.setGame({
+      schemaVersion: 7,
+      phase: "summary",
+      round: 1,
+      score: 0,
+      anxiety: 0,
+      heat: 100,
+      testkits: 1,
+      hospitals: 1,
+      infected: false,
+      playerGender: "female",
+      partnerGender: profile.gender,
+      partner,
+      log: [entry],
+      ended: false,
+      result: null
+    });
+    harness.setRandomValues([0]);
+
+    harness.api.lossOfControl(entry, partner);
+
+    assert.match(entry.action, new RegExp("失控追加：" + scenario.expected));
+    assert.doesNotMatch(entry.action, new RegExp(scenario.forbidden));
+  });
+});
+
 test("a skip chaos event writes an explicit timeline row", () => {
   const harness = createHarness();
   harness.api.start();
@@ -347,6 +530,209 @@ test("a skip chaos event writes an explicit timeline row", () => {
   assert.equal(skipped.action, "今晚被突發事件略過");
   assert.equal(skipped.skipReason?.title, event.title);
   assert.equal(skipped.skipReason?.appliedSkip, true);
+});
+
+test("a legacy v4 skip is restored as an explicit missing-night timeline row", () => {
+  const seedHarness = createHarness();
+  const profile = seedHarness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
+  const record = (round, event = null) => ({
+    round,
+    profileId: profile.id,
+    name: profile.name,
+    gender: profile.gender,
+    avatar: profile.image,
+    x: profile.x,
+    y: profile.y,
+    action: "換一個",
+    heat: 58,
+    anxiety: 2,
+    risk: 0,
+    transmission: false,
+    partnerInfected: profile.infected,
+    event
+  });
+  const harness = createHarness({
+    savedGame: JSON.stringify({
+      phase: "summary",
+      round: 3,
+      score: 2,
+      anxiety: 2,
+      heat: 58,
+      testkits: 1,
+      hospitals: 1,
+      infected: false,
+      playerGender: "female",
+      partnerGender: "male",
+      log: [record(1, { title: "大樓突然停電", skip: true }), record(3)]
+    })
+  });
+  const state = harness.api.getGame();
+
+  assert.equal(JSON.stringify(state.log.map(entry => entry.round)), JSON.stringify([1, 2, 3]));
+  assert.equal(JSON.stringify(state.log.map(entry => entry.kind)), JSON.stringify(["encounter", "skipped", "encounter"]));
+  assert.equal(state.log[0].event.appliedSkip, true);
+  assert.equal(state.log[1].skipReason.title, "大樓突然停電");
+  assert.equal(state.log[1].skipReason.appliedSkip, true);
+  assert.equal(state.log[1].transmission, false);
+});
+
+test("legacy transmission history overrides a changed canonical health flag safely", () => {
+  const seedHarness = createHarness();
+  const profile = seedHarness.api.data.PARTY_PEOPLE.find(person => person.id === "male-2");
+  assert.equal(profile.infected, false, "the fixture depends on today's male-2 profile being healthy");
+  const harness = createHarness({
+    savedGame: JSON.stringify({
+      schemaVersion: 4,
+      phase: "finale",
+      round: 10,
+      score: 12,
+      anxiety: 30,
+      heat: 0,
+      testkits: 0,
+      hospitals: 0,
+      infected: false,
+      playerGender: "female",
+      partnerGender: "male",
+      ended: true,
+      result: "victory",
+      log: [{
+        kind: "encounter",
+        round: 1,
+        profileId: profile.id,
+        name: profile.name,
+        gender: profile.gender,
+        avatar: profile.image,
+        x: profile.x,
+        y: profile.y,
+        action: "無套性交",
+        heat: 25,
+        anxiety: 30,
+        risk: 60,
+        transmission: true,
+        partnerInfected: true
+      }]
+    })
+  });
+  const state = harness.api.getGame();
+
+  assert.equal(state.log[0].transmission, true);
+  assert.equal(state.log[0].partnerInfected, true, "historical transmission must not be erased by today's profile library");
+  assert.equal(state.infected, true);
+  assert.equal(state.result, "final_positive", "a stale victory cannot coexist with a preserved transmission");
+  harness.api.finale();
+  assert.match(harness.element("replay-overview").innerHTML, /延遲判決觸發：第 1 晚/);
+  assert.match(harness.element("replay-list").innerHTML, /舊紀錄把答案留在這一晚/);
+  assert.doesNotMatch(harness.element("replay-list").innerHTML, /未發現感染/);
+});
+
+test("string-valued legacy health flags cannot fabricate a transmission", () => {
+  const harness = createHarness();
+  const profile = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
+  const state = harness.api.normalizeGame({
+    schemaVersion: 4,
+    phase: "finale",
+    round: 10,
+    heat: 0,
+    anxiety: 0,
+    infected: "false",
+    ended: true,
+    result: "victory",
+    playerGender: "female",
+    partnerGender: profile.gender,
+    log: [{
+      kind: "encounter",
+      round: 1,
+      profileId: profile.id,
+      name: profile.name,
+      gender: profile.gender,
+      action: "無套性交",
+      heat: 25,
+      anxiety: 30,
+      risk: 60,
+      transmission: "false",
+      partnerInfected: "false"
+    }]
+  });
+
+  assert.equal(state.log[0].transmission, false);
+  assert.equal(state.infected, false);
+  assert.equal(state.result, "victory");
+});
+
+test("replay fallbacks distinguish hospital, skipped, and unknown encounters", () => {
+  const harness = createHarness();
+  const base = {
+    kind: "encounter",
+    round: 1,
+    profileId: null,
+    avatar: "",
+    gender: null,
+    x: 0,
+    y: 0,
+    heat: 50,
+    anxiety: 0,
+    risk: 0,
+    transmission: false,
+    partnerInfected: false,
+    event: null,
+    skipReason: null
+  };
+  const hospital = harness.api.renderReplayItem({ ...base, name: "醫院檢查", action: "去醫院" });
+  const unknown = harness.api.renderReplayItem({ ...base, name: "未記錄對象", action: "換一個" });
+  const skipped = harness.api.renderReplayItem({
+    ...base,
+    kind: "skipped",
+    name: "突發快轉",
+    action: "今晚被突發事件略過",
+    skipReason: { title: "大樓突然停電", appliedSkip: true }
+  });
+
+  assert.match(hospital, />🏥<\/span>/);
+  assert.doesNotMatch(hospital, />👤<\/span>/);
+  assert.match(unknown, />👤<\/span>/);
+  assert.doesNotMatch(unknown, />🏥<\/span>/);
+  assert.match(skipped, />🎲<\/span>/);
+  assert.match(skipped, /突發快轉：大樓突然停電/);
+});
+
+test("an 8% transmission is counted and described as a risk choice", () => {
+  const harness = createHarness();
+  const profile = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
+  const clues = harness.api.conversation.buildClues(profile);
+  harness.api.start();
+  Object.assign(harness.api.getGame(), {
+    partnerGender: profile.gender,
+    partner: {
+      profileId: profile.id,
+      avatar: profile.image,
+      x: profile.x,
+      y: profile.y,
+      name: profile.name,
+      gender: profile.gender,
+      flirt: "測試",
+      clues,
+      lastClueId: clues.find(clue => clue.revealed)?.id || null,
+      infected: true,
+      tested: false,
+      round: 1
+    }
+  });
+  harness.setRandomValues([0.01, 0.5]);
+
+  harness.api.resolve("oral_condom");
+  const state = harness.api.getGame();
+  assert.equal(state.log[0].risk, 8);
+  assert.equal(state.log[0].transmission, true);
+  state.round = 10;
+  state.ended = true;
+  state.phase = "finale";
+  state.result = "final_positive";
+  harness.api.finale();
+
+  assert.match(harness.element("replay-overview").innerHTML, /風險選擇：1/);
+  assert.doesNotMatch(harness.element("replay-overview").innerHTML, /高風險選擇/);
+  assert.doesNotMatch(harness.element("finale-body").textContent, /高風險/);
+  assert.match(harness.element("replay-overview").innerHTML, /延遲判決觸發：第 1 晚/);
 });
 
 test("legacy or malicious saves cannot inject replay HTML", () => {
@@ -398,7 +784,56 @@ test("legacy or malicious saves cannot inject replay HTML", () => {
   assert.equal(state.log[1].avatar, "", "untrusted avatar URLs must be discarded");
 });
 
-test("final replay keeps full stories but shows the safety note only once", () => {
+test("a valid profile id wins over every stale name and health field", () => {
+  const harness = createHarness();
+  const target = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-100");
+  const stale = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
+  assert.notEqual(target.name, stale.name);
+  assert.notEqual(target.infected, stale.infected, "the fixture must detect stale health data as well as stale identity data");
+
+  const state = harness.api.normalizeGame({
+    schemaVersion: 7,
+    phase: "summary",
+    round: 1,
+    score: 1,
+    heat: 50,
+    anxiety: 0,
+    infected: false,
+    playerGender: "female",
+    partnerGender: "male",
+    log: [{
+      kind: "encounter",
+      round: 1,
+      profileId: target.id,
+      name: stale.name,
+      gender: stale.gender,
+      avatar: stale.image,
+      x: stale.x,
+      y: stale.y,
+      action: "換一個",
+      heat: 50,
+      anxiety: 0,
+      risk: 0,
+      transmission: false,
+      partnerInfected: stale.infected
+    }]
+  });
+  const entry = state.log[0];
+  const replay = harness.api.renderReplayItem(entry);
+
+  assert.equal(entry.profileId, target.id);
+  assert.equal(entry.name, target.name);
+  assert.equal(entry.avatar, target.image);
+  assert.equal(entry.x, target.x);
+  assert.equal(entry.y, target.y);
+  assert.equal(entry.partnerInfected, target.infected);
+  assert.match(replay, new RegExp(target.name));
+  assert.match(replay, new RegExp(target.title));
+  assert.doesNotMatch(replay, new RegExp(stale.name));
+  assert.doesNotMatch(replay, new RegExp(stale.title));
+});
+
+test("final replay keeps full stories but shows the fictional venue note only once", () => {
   const harness = createHarness();
   const healthy = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
   const infected = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
@@ -441,10 +876,11 @@ test("final replay keeps full stories but shows the safety note only once", () =
   harness.api.finale();
   const overview = harness.element("replay-overview").innerHTML;
   const replay = harness.element("replay-list").innerHTML;
-  assert.equal((overview.match(/人物、事件與健康設定皆為虛構/g) || []).length, 1);
+  assert.equal((overview.match(/角色與事件皆為虛構/g) || []).length, 1);
+  assert.doesNotMatch(overview, /價值判斷|專業檢測|醫療協助/);
   assert.match(replay, new RegExp(healthy.title));
   assert.match(replay, new RegExp(infected.title));
-  assert.doesNotMatch(replay, /角色設定：|健康背景｜/, "generic healthy lectures should not repeat inside every profile");
+  assert.doesNotMatch(replay, /角色設定：|健康背景｜|最終狀態｜|未發現感染/, "generic healthy verdicts should not repeat inside every profile");
   assert.ok(replay.includes(infected.infectionSource), "an infected profile should still unlock its delayed backstory");
 });
 
@@ -711,7 +1147,7 @@ test("start still enforces the consent reminder when called directly", () => {
   harness.api.start();
 
   assert.equal(harness.api.getGame(), null);
-  assert.match(harness.element("toast").textContent, /先確認/);
+  assert.match(harness.element("toast").textContent, /先勾選進場聲明/);
 });
 
 test("corrupt persisted data is discarded instead of retried on every launch", () => {

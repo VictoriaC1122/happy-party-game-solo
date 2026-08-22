@@ -6,31 +6,36 @@
   <meta name="theme-color" content="#f3e9eb"><meta name="description" content="健康社交模擬遊戲：一個人也能玩的 10 晚單機社交模擬。">
   <meta name="robots" content="index,follow">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <link rel="canonical" href="https://victoriac1122.github.io/happy-party-game-solo/">
+  <link rel="canonical" href="https://victoriachengyw.com/happy-party-game-solo/">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_TW">
   <meta property="og:title" content="健康社交模擬遊戲｜單機版">
   <meta property="og:description" content="一個人也能玩的 10 晚單機社交模擬。">
-  <meta property="og:url" content="https://victoriac1122.github.io/happy-party-game-solo/">
-  <meta property="og:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta property="og:url" content="https://victoriachengyw.com/happy-party-game-solo/">
+  <meta property="og:image" content="https://victoriachengyw.com/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="675">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:alt" content="健康社交模擬遊戲的動漫結局插圖">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="健康社交模擬遊戲｜單機版">
   <meta name="twitter:description" content="一個人也能玩的 10 晚單機社交模擬。">
-  <meta name="twitter:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta name="twitter:image" content="https://victoriachengyw.com/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta name="twitter:image:alt" content="健康社交模擬遊戲的動漫結局插圖">
   <title>健康社交模擬遊戲｜單機版</title>
-  <link rel="stylesheet" href="./styles.css?v=prod3">
-  <link rel="stylesheet" href="./endings.css?v=prod3">
-  <link rel="stylesheet" href="./mobile.css?v=prod3">
-  <link rel="stylesheet" href="./stories.css?v=prod3">
-  <link rel="stylesheet" href="./conversations.css?v=prod3">
-  <link rel="stylesheet" href="./polish.css?v=prod4">
-  <script defer src="./data.js?v=nights7"></script>
-  <script defer src="./stories.js?v=stories4"></script>
-  <script defer src="./extra-stories.js?v=stories5"></script>
-  <script defer src="./chaos.js?v=chaos2"></script>
-  <script defer src="./conversation.js?v=prod4"></script>
-  <script defer src="./app.js?v=prod4"></script>
+  <link rel="stylesheet" href="./styles.css?v=solo8">
+  <link rel="stylesheet" href="./endings.css?v=solo8">
+  <link rel="stylesheet" href="./mobile.css?v=solo8">
+  <link rel="stylesheet" href="./stories.css?v=solo8">
+  <link rel="stylesheet" href="./conversations.css?v=solo8">
+  <link rel="stylesheet" href="./polish.css?v=solo8">
+  <script defer src="./data.js?v=solo8"></script>
+  <script defer src="./stories.js?v=solo8"></script>
+  <script defer src="./extra-stories.js?v=solo8"></script>
+  <script defer src="./chaos.js?v=solo8"></script>
+  <script defer src="./conversation.js?v=solo8"></script>
+  <script defer src="./app.js?v=solo8"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true"></div>
@@ -42,12 +47,12 @@
       <div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2 id="intro-title">今晚會亂，規則看懂就好</h2></div></div>
       <div id="load-error" class="notice-card load-error hidden" role="alert"><h3>遊戲元件沒有完整載入</h3><p>請重新載入頁面後再開始；目前不會建立不完整的遊戲進度。</p></div>
       <div class="stack">
-        <article class="notice-card intro-notice"><h3>這是遊戲，不是約會現場</h3><p>虛構的成人派對情境；現實互動永遠以同意與保護為先。</p></article>
+        <article class="notice-card intro-notice"><h3>先說好：今晚全是虛構</h3><p>成人虛構情節；現實互動以本人同意與保護為前提。</p></article>
         <div class="solo-setup"><label><span>你的性別</span><select id="player-gender"><option value="female">女</option><option value="male">男</option></select></label><label><span>今晚想遇到</span><select id="partner-gender"><option value="male">男</option><option value="female">女</option></select></label></div>
         <p id="resume-note" class="resume-note hidden" role="status"></p>
-        <details class="game-guide-toggle"><summary>今晚規則與提醒</summary><div class="education-grid"><article class="notice-card"><h3>延遲判決</h3><p>高風險後不會立即告知感染；只有醫院檢查或最終結算才會揭曉。</p></article><article class="notice-card"><h3>醫院可提早揭曉</h3><p>醫院會清空心理壓力、提高壓抑值，也會當場揭露目前結果。</p></article><article class="notice-card"><h3>怎麼才算贏</h3><p>第 10 晚結算時，壓抑值必須歸零，而且身體健康；壓抑或壓力滿格會提前失敗。</p></article></div><article class="notice-card education-callout"><h3>心裡毛毛的？現實沒有翻牌動畫</h3><p>真的擔心就找醫療院所或檢測資源，別把自己嚇成連續劇。</p></article></details>
+        <details class="game-guide-toggle"><summary>今晚規則</summary><div class="education-grid"><article class="notice-card"><h3>延遲判決</h3><p>高風險後不會立即公布結果；只有醫院檢查或最終結算才會翻牌。</p></article><article class="notice-card"><h3>醫院可提早翻牌</h3><p>醫院會清空心理壓力、提高壓抑值，也會當場揭曉目前結果。</p></article><article class="notice-card"><h3>怎麼才算贏</h3><p>第 10 晚結算時，壓抑值必須歸零，而且身體健康；壓抑或壓力滿格會提前結束。</p></article></div></details>
       </div>
-      <label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我知道這是虛構派對遊戲；現實互動要本人同意，也要做好保護。</span></label>
+      <label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我已看過上方聲明，準備進場。</span></label>
       <div class="actions-row"><button id="start-btn" class="primary-btn" type="button" disabled>一個人也能開喝</button><button id="new-game-btn" class="ghost-btn hidden" type="button">開始全新一局</button></div>
     </section>
 
