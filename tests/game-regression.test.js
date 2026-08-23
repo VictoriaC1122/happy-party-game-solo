@@ -1,1173 +1,371 @@
-"use strict";
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const fs=require("node:fs");
+const path=require("node:path");
+const vm=require("node:vm");
 
-/*
- * Lightweight regression tests for the browser-only game.
- *
- * The production code intentionally has no bundler or DOM dependency.  This
- * harness evaluates the same scripts in a VM context with a deliberately small
- * fake DOM so game-state transitions can be checked in Node as well.
- *
- * Run with:
- *   node --test tests/game-regression.test.js
- */
+const ROOT=path.resolve(__dirname,"..");
+const read=file=>fs.readFileSync(path.join(ROOT,file),"utf8");
 
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const test = require("node:test");
-const vm = require("node:vm");
-
-const ROOT = path.resolve(__dirname, "..");
-const CONVERSATION_SCRIPT = "conversation.js";
-const HAS_CONVERSATION_SCRIPT = fs.existsSync(path.join(ROOT, CONVERSATION_SCRIPT));
-const GAME_SCRIPTS = [
-  "data.js",
-  "stories.js",
-  "extra-stories.js",
-  "chaos.js",
-  ...(HAS_CONVERSATION_SCRIPT ? [CONVERSATION_SCRIPT] : []),
-  "app.js"
-];
-const SCREEN_IDS = ["intro-screen", "round-screen", "summary-screen", "awards-screen"];
-const ELEMENT_IDS = [
-  "consent-checkbox", "start-btn", "new-game-btn", "resume-note", "load-error", "chat-btn", "test-btn", "hospital-btn", "next-btn", "restart-btn",
-  "toast", "warning", "player-gender", "partner-gender", "round-title", "partner-avatar", "partner-name",
-  "partner-flirt", "partner-tags", "action-buttons", "dissatisfaction-value", "dissatisfaction-bar",
-  "anxiety-value", "anxiety-bar", "score-value", "testkit-value", "summary-title", "summary-heading",
-  "summary-body", "summary-extra", "scoreboard", "finale-heading", "finale-body", "finale-image",
-  "finale-status", "replay-overview", "replay-list", "chat-history", "chat-history-list", ...SCREEN_IDS
-];
-
-class FakeClassList {
-  constructor() {
-    this.values = new Set();
-  }
-
-  add(...names) {
-    names.forEach(name => this.values.add(name));
-  }
-
-  remove(...names) {
-    names.forEach(name => this.values.delete(name));
-  }
-
-  toggle(name, force) {
-    const enabled = force === undefined ? !this.values.has(name) : Boolean(force);
-    if (enabled) this.values.add(name);
-    else this.values.delete(name);
-    return enabled;
-  }
-
-  contains(name) {
-    return this.values.has(name);
-  }
-}
-
-class FakeElement {
-  constructor(id) {
-    this.id = id;
-    this.attributes = new Map();
-    this.classList = new FakeClassList();
-    this.style = {};
-    this.textContent = "";
-    this.innerHTML = "";
-    this.value = "";
-    this.checked = false;
-    this.disabled = false;
-    this.onclick = null;
-    this.onchange = null;
-    this.parentElement = null;
-  }
-
-  setAttribute(name, value) {
-    this.attributes.set(name, String(value));
-  }
-
-  getAttribute(name) {
-    return this.attributes.get(name) ?? null;
-  }
-
-  querySelector() {
-    return new FakeElement("heading");
-  }
-
-  focus() {}
-}
-
-function createHarness({ savedGame = null, randomValues = [] } = {}) {
-  const elements = new Map(ELEMENT_IDS.map(id => [id, new FakeElement(id)]));
-  const meter = new FakeElement("dissatisfaction-meter");
-  const anxietyMeter = new FakeElement("anxiety-meter");
-  elements.get("dissatisfaction-bar").parentElement = meter;
-  elements.get("anxiety-bar").parentElement = anxietyMeter;
-  elements.get("player-gender").value = "female";
-  elements.get("partner-gender").value = "male";
-  elements.get("consent-checkbox").checked = true;
-
-  const listeners = new Map();
-  const storage = new Map();
-  if (savedGame !== null) storage.set("happy-party-solo-v4", savedGame);
-
-  const document = {
-    body: new FakeElement("body"),
-    addEventListener(type, callback) {
-      listeners.set(type, callback);
-    },
-    getElementById(id) {
-      if (!elements.has(id)) elements.set(id, new FakeElement(id));
-      return elements.get(id);
-    },
-    querySelectorAll(selector) {
-      if (selector === ".screen") return SCREEN_IDS.map(id => elements.get(id));
-      if (selector === "#round-screen button") {
-        return ["chat-btn", "test-btn", "hospital-btn", "action-buttons"].map(id => elements.get(id));
-      }
-      // The test harness invokes transitions directly, so dynamic action
-      // buttons do not need their own fake nodes.
-      return [];
-    }
-  };
-
-  const localStorage = {
-    getItem(key) {
-      return storage.has(key) ? storage.get(key) : null;
-    },
-    setItem(key, value) {
-      storage.set(key, String(value));
-    },
-    removeItem(key) {
-      storage.delete(key);
-    }
-  };
-  const sessionStorage = {
-    getItem() {
-      return null;
-    },
-    setItem() {},
-    removeItem() {}
-  };
-
-  const randomQueue = [...randomValues];
-  const math = Object.create(Math);
-  math.random = () => randomQueue.length ? randomQueue.shift() : 0.5;
-
-  const context = vm.createContext({
+function loadRuntime({withApp=false}={}){
+  const context=vm.createContext({
     console,
-    document,
-    localStorage,
-    Math: math,
-    setTimeout(callback) {
-      callback();
-      return 1;
-    },
-    clearTimeout() {},
-    window: {
-      localStorage,
-      sessionStorage,
-      scrollTo() {},
-      requestAnimationFrame(callback) {
-        callback();
-        return 1;
-      }
-    }
+    Math,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame:callback=>callback(),
+    globalThis:null
   });
+  context.globalThis=context;
+  context.window=context;
+  context.document={addEventListener(){},getElementById(){return null},querySelectorAll(){return[]}};
+  const data=read("data.js")+"\nglobalThis.__DATA={GAME_CONFIG,ACTIONS,ENDINGS,STATUS_TAGS,VIBE_TAGS,BOUNDARY_TAGS,FLIRT_LINES,AVATAR_SHEETS,PARTY_PEOPLE};";
+  vm.runInContext(data,context,{filename:"data.js"});
+  vm.runInContext(read("engine.js"),context,{filename:"engine.js"});
+  if(withApp)vm.runInContext(read("app.js"),context,{filename:"app.js"});
+  return context;
+}
 
-  for (const script of GAME_SCRIPTS) {
-    vm.runInContext(fs.readFileSync(path.join(ROOT, script), "utf8"), context, { filename: script });
+function lcg(seed=1){
+  let state=seed>>>0;
+  return()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);
+}
+
+function fixed(value){return()=>value;}
+
+test("production loads only the clean runtime",()=>{
+  const html=read("index.html");
+  assert.match(html,/data\.js\?v=clean2/);
+  assert.match(html,/engine\.js\?v=clean2/);
+  assert.match(html,/app\.js\?v=clean2/);
+  for(const removed of ["chaos.js","conversation.js","stories.js","extra-stories.js","polish.css","mobile.css","conversations.css"]){
+    assert.doesNotMatch(html,new RegExp(removed.replace(".","\\.")));
   }
-
-  vm.runInContext(`
-    globalThis.__gameRegression = {
-      start,
-      chat,
-      test,
-      hospital,
-      resolve,
-      next,
-      renderRound,
-      renderActions,
-      applyChaos,
-      lossOfControl,
-      finale,
-      normalizeGame,
-      renderReplayItem,
-      conversation: globalThis.ConversationEngine || window.ConversationEngine || null,
-      getGame: () => game,
-      setGame: value => { game = value; },
-      data: { PARTY_PEOPLE, MALE_STORY_TEMPLATES, FEMALE_STORY_TEMPLATES, MALE_INFECTION_SOURCES, FEMALE_INFECTION_SOURCES, AVATAR_SHEETS, CHAOS_EVENTS, GAME_CONFIG }
-    };
-  `, context, { filename: "game-regression-bridge.js" });
-
-  const ready = listeners.get("DOMContentLoaded");
-  assert.ok(ready, "app.js should register its DOMContentLoaded handler");
-  ready();
-
-  return {
-    api: context.__gameRegression,
-    element: id => document.getElementById(id),
-    getSavedGame: () => storage.get("happy-party-solo-v4") ?? null,
-    setRandomValues: values => {
-      randomQueue.splice(0, randomQueue.length, ...values);
-    }
-  };
-}
-
-test("character library retains its 200-person, safe-story invariants", () => {
-  const { data } = createHarness().api;
-  const people = data.PARTY_PEOPLE;
-  const male = people.filter(person => person.gender === "male");
-  const female = people.filter(person => person.gender === "female");
-  const avatarPaths = new Set(Object.values(data.AVATAR_SHEETS).flat());
-  const venues = people.filter(person => person.venueCameo);
-
-  assert.equal(people.length, 200);
-  assert.equal(male.length, 100);
-  assert.equal(female.length, 100);
-  assert.equal(new Set(people.map(person => person.id)).size, 200);
-  assert.equal(new Set(people.map(person => `${person.gender}:${person.name}`)).size, 200);
-  assert.equal(new Set(people.map(person => person.title)).size, 200);
-  assert.equal(new Set(people.map(person => person.story)).size, 200);
-  assert.equal(data.AVATAR_SHEETS.male.length, 4);
-  assert.equal(data.AVATAR_SHEETS.female.length, 4);
-  assert.equal(new Set(people.map(person => `${person.image}:${person.x}:${person.y}`)).size, 200);
-  assert.ok(Object.values(data.AVATAR_SHEETS).flat().every(asset => fs.existsSync(path.join(ROOT, asset))));
-  assert.equal(data.MALE_STORY_TEMPLATES.length, 100);
-  assert.equal(data.FEMALE_STORY_TEMPLATES.length, 100);
-  assert.equal(Object.keys(data.MALE_INFECTION_SOURCES).length, 30);
-  assert.equal(Object.keys(data.FEMALE_INFECTION_SOURCES).length, 30);
-  assert.equal(people.filter(person => person.infected).length, 60);
-  assert.ok(people.every(person => person.infected === Boolean(person.infectionSource)));
-  assert.ok(people.every(person => person.story && person.title));
-  assert.ok(people.every(person => avatarPaths.has(person.image) && Number.isInteger(person.x) && person.x >= 0 && person.x <= 4 && Number.isInteger(person.y) && person.y >= 0 && person.y <= 4));
-  assert.equal(venues.length, 12);
-  assert.equal(new Set(venues.map(person => person.venueCameo)).size, 12);
-  assert.ok(venues.every(person => !person.infected && !person.infectionSource));
+  assert.doesNotMatch(html,/consent-checkbox|生存分|突發事件|解鎖故事|聊天歷史/);
 });
 
-test("a started round persists and restores the same partner", () => {
-  const first = createHarness({ randomValues: [0.12, 0.34, 0.56, 0.78] });
-  first.api.start();
-  const beforeReload = first.api.getGame();
-  const saved = first.getSavedGame();
-
-  assert.ok(beforeReload.partner?.profileId, "a new game should have an active partner");
-  assert.ok(saved, "starting a game should write a save");
-
-  const restored = createHarness({ savedGame: saved });
-  assert.equal(restored.api.getGame().partner?.profileId, beforeReload.partner.profileId);
-  assert.equal(restored.api.getGame().partner?.round, 1);
-
-  restored.api.renderRound();
-  assert.equal(restored.api.getGame().partner?.profileId, beforeReload.partner.profileId, "resume must not reroll the active partner");
+test("the library keeps 100 men, 100 women, and 200 unique portraits",()=>{
+  const {__DATA}=loadRuntime();
+  const people=Array.from(__DATA.PARTY_PEOPLE);
+  assert.equal(people.length,200);
+  assert.equal(people.filter(person=>person.gender==="male").length,100);
+  assert.equal(people.filter(person=>person.gender==="female").length,100);
+  assert.equal(new Set(people.map(person=>person.id)).size,200);
+  assert.equal(new Set(people.map(person=>`${person.gender}|${person.image}|${person.x}|${person.y}`)).size,200);
+  assert.ok(people.every(person=>person.name&&person.image&&person.x>=0&&person.x<=4&&person.y>=0&&person.y<=4));
 });
 
-test("a ten-night run does not repeat a character before the pool is exhausted", () => {
-  const harness = createHarness({ randomValues: Array(80).fill(0.5) });
-  harness.api.start();
-  const profileIds = [];
-
-  for (let night = 0; night < 10; night += 1) {
-    profileIds.push(harness.api.getGame().partner.profileId);
-    harness.api.resolve("oral_condom");
-    if (night < 9) harness.api.next();
+test("every generated table has three or four short tags and exactly one hidden clue",()=>{
+  const runtime=loadRuntime();
+  const {SoloEngine,__DATA}=runtime;
+  const random=lcg(91);
+  for(const profile of Array.from(__DATA.PARTY_PEOPLE)){
+    const partner=SoloEngine.buildPartner(profile,1,random);
+    assert.ok(partner.tags.length===3||partner.tags.length===4);
+    assert.equal(partner.tags.filter(tag=>!tag.revealed).length,1);
+    assert.ok(partner.tags.every(tag=>Array.from(tag.label).length<=14));
+    assert.ok(partner.tags.filter(tag=>!tag.revealed).every(tag=>tag.riskDelta!==0));
+    assert.ok(partner.tags.filter(tag=>tag.constraint).every(tag=>tag.revealed));
   }
-
-  assert.equal(profileIds.length, 10);
-  assert.equal(new Set(profileIds).size, 10);
 });
 
-test("chat progress is saved and survives a reload", () => {
-  const first = createHarness();
-  first.api.start();
-  const originalPartner = first.api.getGame().partner.profileId;
-
-  first.api.chat();
-  const stateAfterChat = first.api.getGame();
-  const saved = first.getSavedGame();
-  const revealedBeforeReload = stateAfterChat.partner.clues
-    .filter(clue => clue.revealed)
-    .map(clue => clue.id);
-
-  assert.equal(stateAfterChat.heat, 53);
-  assert.equal(revealedBeforeReload.length, 2, "one chat should add exactly one conversation clue");
-  assert.ok(stateAfterChat.partner.lastClueId, "the last spoken clue should be persisted for the dialogue card");
-  assert.ok(saved, "chat should immediately persist game state");
-
-  const restored = createHarness({ savedGame: saved });
-  const restoredState = restored.api.getGame();
-  assert.equal(restoredState.heat, 53);
-  assert.equal(
-    JSON.stringify(restoredState.partner?.clues.filter(clue => clue.revealed).map(clue => clue.id)),
-    JSON.stringify(revealedBeforeReload),
-    "reload must preserve every clue already revealed through chat"
-  );
-  assert.equal(restoredState.partner?.lastClueId, stateAfterChat.partner.lastClueId);
-  assert.equal(restoredState.partner?.profileId, originalPartner);
-});
-
-test("a refreshed final summary always routes back to the replay", () => {
-  const savedGame = JSON.stringify({
-    schemaVersion: 4,
-    phase: "summary",
-    round: 10,
-    score: 12,
-    anxiety: 8,
-    heat: 0,
-    testkits: 0,
-    hospitals: 1,
-    infected: false,
-    playerGender: "male",
-    partnerGender: "female",
-    ended: false,
-    result: null,
-    log: []
-  });
-  const harness = createHarness({ savedGame });
-
-  assert.equal(harness.api.getGame().phase, "finale");
-  assert.equal(harness.element("start-btn").textContent, "查看上一趟復盤");
-  assert.equal(harness.element("start-btn").disabled, false);
-});
-
-test("chat reaching 100% heat ends the game immediately", () => {
-  const harness = createHarness();
-  harness.api.start();
-  harness.api.getGame().heat = 97;
-
-  harness.api.chat();
-  const state = harness.api.getGame();
-
-  assert.equal(state.heat, 100);
-  assert.equal(state.ended, true);
-  assert.equal(state.result, "urge");
-  assert.equal(state.phase, "finale");
-  assert.equal(state.log.length, 1);
-  assert.match(state.log[0].action, /刺探後壓抑失控/);
-});
-
-test("leaving at 100% heat ends the run without rewriting leaving as intimacy", () => {
-  const harness = createHarness();
-  harness.api.start();
-  harness.api.getGame().heat = 92;
-
-  harness.api.resolve("refuse");
-  const state = harness.api.getGame();
-  const entry = state.log[0];
-
-  assert.equal(state.heat, 100);
-  assert.equal(state.result, "urge");
-  assert.equal(entry.risk, 0);
-  assert.equal(entry.transmission, false);
-  assert.match(entry.action, /^換一個/);
-  assert.match(entry.action, /確實離開/);
-  assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
-  assert.doesNotMatch(harness.element("finale-body").textContent, /系統替你抽|高風險行動/);
-});
-
-test("a hospital visit that fills heat records only the completed examination", () => {
-  const harness = createHarness();
-  harness.api.start();
-  harness.api.getGame().heat = 80;
-
-  harness.api.hospital();
-  const state = harness.api.getGame();
-  const entry = state.log[0];
-
-  assert.equal(state.heat, 100);
-  assert.equal(state.result, "urge");
-  assert.equal(entry.risk, 0);
-  assert.equal(entry.transmission, false);
-  assert.match(entry.action, /^去醫院 → 檢查完成/);
-  assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
-  assert.doesNotMatch(harness.element("finale-body").textContent, /系統替你抽|高風險行動/);
-});
-
-test("loss of control respects revealed boundaries and abnormal tests", () => {
-  const scenarios = [
-    { label: "revealed no-intimacy boundary", tested: false, clues: [{ id: "boundary", revealed: true, constraint: "no_intimacy" }] },
-    { label: "abnormal test", tested: true, clues: [] }
-  ];
-
-  scenarios.forEach(scenario => {
-    const harness = createHarness();
-    const profile = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
-    const partner = {
-      profileId: profile.id,
-      avatar: profile.image,
-      x: profile.x,
-      y: profile.y,
-      name: profile.name,
-      gender: profile.gender,
-      infected: true,
-      tested: scenario.tested,
-      clues: scenario.clues,
-      round: 1
-    };
-    const entry = {
-      kind: "encounter",
-      round: 1,
-      name: profile.name,
-      profileId: profile.id,
-      action: "刺探後壓抑失控",
-      heat: 100,
-      anxiety: 0,
-      risk: 0,
-      transmission: false,
-      partnerInfected: true,
-      event: null,
-      skipReason: null
-    };
-    harness.api.setGame({
-      schemaVersion: 7,
-      phase: "summary",
-      round: 1,
-      score: 0,
-      anxiety: 0,
-      heat: 100,
-      testkits: 0,
-      hospitals: 1,
-      infected: false,
-      playerGender: "female",
-      partnerGender: profile.gender,
-      partner,
-      log: [entry],
-      ended: false,
-      result: null
-    });
-    harness.setRandomValues([0, 0]);
-
-    harness.api.lossOfControl(entry, partner);
-    const state = harness.api.getGame();
-
-    assert.equal(state.infected, false, `${scenario.label} must not create an exposure`);
-    assert.equal(entry.risk, 0, `${scenario.label} must not gain a forced risk`);
-    assert.equal(entry.transmission, false, `${scenario.label} must not transmit`);
-    assert.match(entry.action, /沒有追加親密行動/);
-    assert.doesNotMatch(entry.action, /失控追加|口交|性交/);
-  });
-});
-
-test("loss of control only chooses an action allowed by the revealed boundary", () => {
-  const scenarios = [
-    { constraint: "no_oral", expected: "無套性交", forbidden: "無套口交" },
-    { constraint: "no_sex", expected: "無套口交", forbidden: "無套性交" }
-  ];
-
-  scenarios.forEach(scenario => {
-    const harness = createHarness();
-    const profile = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
-    const partner = {
-      profileId: profile.id,
-      avatar: profile.image,
-      x: profile.x,
-      y: profile.y,
-      name: profile.name,
-      gender: profile.gender,
-      infected: false,
-      tested: false,
-      clues: [{ id: "boundary", revealed: true, constraint: scenario.constraint }],
-      round: 1
-    };
-    const entry = {
-      kind: "encounter",
-      round: 1,
-      name: profile.name,
-      profileId: profile.id,
-      action: "刺探後壓抑失控",
-      heat: 100,
-      anxiety: 0,
-      risk: 0,
-      transmission: false,
-      partnerInfected: false,
-      event: null,
-      skipReason: null
-    };
-    harness.api.setGame({
-      schemaVersion: 7,
-      phase: "summary",
-      round: 1,
-      score: 0,
-      anxiety: 0,
-      heat: 100,
-      testkits: 1,
-      hospitals: 1,
-      infected: false,
-      playerGender: "female",
-      partnerGender: profile.gender,
-      partner,
-      log: [entry],
-      ended: false,
-      result: null
-    });
-    harness.setRandomValues([0]);
-
-    harness.api.lossOfControl(entry, partner);
-
-    assert.match(entry.action, new RegExp("失控追加：" + scenario.expected));
-    assert.doesNotMatch(entry.action, new RegExp(scenario.forbidden));
-  });
-});
-
-test("a skip chaos event writes an explicit timeline row", () => {
-  const harness = createHarness();
-  harness.api.start();
-  const state = harness.api.getGame();
-  state.round = 1;
-  state.log = [];
-  const entry = { kind: "encounter", round: 1, event: null, heat: state.heat, anxiety: state.anxiety };
-
-  // applyChaos first rolls against 15%, then picks the 11th of 12 events,
-  // which is the skip event ("大樓突然停電").
-  harness.setRandomValues([0, 0.84]);
-  const event = harness.api.applyChaos(entry);
-  const skipped = state.log.at(-1);
-
-  assert.equal(event?.skip, true);
-  assert.equal(event?.appliedSkip, true);
-  assert.equal(state.round, 2);
-  assert.equal(skipped.kind, "skipped");
-  assert.equal(skipped.round, 2);
-  assert.equal(skipped.action, "今晚被突發事件略過");
-  assert.equal(skipped.skipReason?.title, event.title);
-  assert.equal(skipped.skipReason?.appliedSkip, true);
-});
-
-test("a legacy v4 skip is restored as an explicit missing-night timeline row", () => {
-  const seedHarness = createHarness();
-  const profile = seedHarness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
-  const record = (round, event = null) => ({
-    round,
-    profileId: profile.id,
-    name: profile.name,
-    gender: profile.gender,
-    avatar: profile.image,
-    x: profile.x,
-    y: profile.y,
-    action: "換一個",
-    heat: 58,
-    anxiety: 2,
-    risk: 0,
-    transmission: false,
-    partnerInfected: profile.infected,
-    event
-  });
-  const harness = createHarness({
-    savedGame: JSON.stringify({
-      phase: "summary",
-      round: 3,
-      score: 2,
-      anxiety: 2,
-      heat: 58,
-      testkits: 1,
-      hospitals: 1,
-      infected: false,
-      playerGender: "female",
-      partnerGender: "male",
-      log: [record(1, { title: "大樓突然停電", skip: true }), record(3)]
-    })
-  });
-  const state = harness.api.getGame();
-
-  assert.equal(JSON.stringify(state.log.map(entry => entry.round)), JSON.stringify([1, 2, 3]));
-  assert.equal(JSON.stringify(state.log.map(entry => entry.kind)), JSON.stringify(["encounter", "skipped", "encounter"]));
-  assert.equal(state.log[0].event.appliedSkip, true);
-  assert.equal(state.log[1].skipReason.title, "大樓突然停電");
-  assert.equal(state.log[1].skipReason.appliedSkip, true);
-  assert.equal(state.log[1].transmission, false);
-});
-
-test("legacy transmission history overrides a changed canonical health flag safely", () => {
-  const seedHarness = createHarness();
-  const profile = seedHarness.api.data.PARTY_PEOPLE.find(person => person.id === "male-2");
-  assert.equal(profile.infected, false, "the fixture depends on today's male-2 profile being healthy");
-  const harness = createHarness({
-    savedGame: JSON.stringify({
-      schemaVersion: 4,
-      phase: "finale",
-      round: 10,
-      score: 12,
-      anxiety: 30,
-      heat: 0,
-      testkits: 0,
-      hospitals: 0,
-      infected: false,
-      playerGender: "female",
-      partnerGender: "male",
-      ended: true,
-      result: "victory",
-      log: [{
-        kind: "encounter",
-        round: 1,
-        profileId: profile.id,
-        name: profile.name,
-        gender: profile.gender,
-        avatar: profile.image,
-        x: profile.x,
-        y: profile.y,
-        action: "無套性交",
-        heat: 25,
-        anxiety: 30,
-        risk: 60,
-        transmission: true,
-        partnerInfected: true
-      }]
-    })
-  });
-  const state = harness.api.getGame();
-
-  assert.equal(state.log[0].transmission, true);
-  assert.equal(state.log[0].partnerInfected, true, "historical transmission must not be erased by today's profile library");
-  assert.equal(state.infected, true);
-  assert.equal(state.result, "final_positive", "a stale victory cannot coexist with a preserved transmission");
-  harness.api.finale();
-  assert.match(harness.element("replay-overview").innerHTML, /延遲判決觸發：第 1 晚/);
-  assert.match(harness.element("replay-list").innerHTML, /舊紀錄把答案留在這一晚/);
-  assert.doesNotMatch(harness.element("replay-list").innerHTML, /未發現感染/);
-});
-
-test("string-valued legacy health flags cannot fabricate a transmission", () => {
-  const harness = createHarness();
-  const profile = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
-  const state = harness.api.normalizeGame({
-    schemaVersion: 4,
-    phase: "finale",
-    round: 10,
-    heat: 0,
-    anxiety: 0,
-    infected: "false",
-    ended: true,
-    result: "victory",
-    playerGender: "female",
-    partnerGender: profile.gender,
-    log: [{
-      kind: "encounter",
-      round: 1,
-      profileId: profile.id,
-      name: profile.name,
-      gender: profile.gender,
-      action: "無套性交",
-      heat: 25,
-      anxiety: 30,
-      risk: 60,
-      transmission: "false",
-      partnerInfected: "false"
-    }]
-  });
-
-  assert.equal(state.log[0].transmission, false);
-  assert.equal(state.infected, false);
-  assert.equal(state.result, "victory");
-});
-
-test("replay fallbacks distinguish hospital, skipped, and unknown encounters", () => {
-  const harness = createHarness();
-  const base = {
-    kind: "encounter",
-    round: 1,
-    profileId: null,
-    avatar: "",
-    gender: null,
-    x: 0,
-    y: 0,
-    heat: 50,
-    anxiety: 0,
-    risk: 0,
-    transmission: false,
-    partnerInfected: false,
-    event: null,
-    skipReason: null
-  };
-  const hospital = harness.api.renderReplayItem({ ...base, name: "醫院檢查", action: "去醫院" });
-  const unknown = harness.api.renderReplayItem({ ...base, name: "未記錄對象", action: "換一個" });
-  const skipped = harness.api.renderReplayItem({
-    ...base,
-    kind: "skipped",
-    name: "突發快轉",
-    action: "今晚被突發事件略過",
-    skipReason: { title: "大樓突然停電", appliedSkip: true }
-  });
-
-  assert.match(hospital, />🏥<\/span>/);
-  assert.doesNotMatch(hospital, />👤<\/span>/);
-  assert.match(unknown, />👤<\/span>/);
-  assert.doesNotMatch(unknown, />🏥<\/span>/);
-  assert.match(skipped, />🎲<\/span>/);
-  assert.match(skipped, /突發快轉：大樓突然停電/);
-});
-
-test("an 8% transmission is counted and described as a risk choice", () => {
-  const harness = createHarness();
-  const profile = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
-  const clues = harness.api.conversation.buildClues(profile);
-  harness.api.start();
-  Object.assign(harness.api.getGame(), {
-    partnerGender: profile.gender,
-    partner: {
-      profileId: profile.id,
-      avatar: profile.image,
-      x: profile.x,
-      y: profile.y,
-      name: profile.name,
-      gender: profile.gender,
-      flirt: "測試",
-      clues,
-      lastClueId: clues.find(clue => clue.revealed)?.id || null,
-      infected: true,
-      tested: false,
-      round: 1
-    }
-  });
-  harness.setRandomValues([0.01, 0.5]);
-
-  harness.api.resolve("oral_condom");
-  const state = harness.api.getGame();
-  assert.equal(state.log[0].risk, 8);
-  assert.equal(state.log[0].transmission, true);
-  state.round = 10;
-  state.ended = true;
-  state.phase = "finale";
-  state.result = "final_positive";
-  harness.api.finale();
-
-  assert.match(harness.element("replay-overview").innerHTML, /風險選擇：1/);
-  assert.doesNotMatch(harness.element("replay-overview").innerHTML, /高風險選擇/);
-  assert.doesNotMatch(harness.element("finale-body").textContent, /高風險/);
-  assert.match(harness.element("replay-overview").innerHTML, /延遲判決觸發：第 1 晚/);
-});
-
-test("legacy or malicious saves cannot inject replay HTML", () => {
-  const payload = "<img src=x onerror=globalThis.pwned=1>";
-  const savedGame = JSON.stringify({
-    schemaVersion: 1,
-    ended: true,
-    result: "unfinished",
-    round: 2,
-    heat: 50,
-    anxiety: 0,
-    playerGender: "female",
-    partnerGender: "male",
-    log: [
-      {
-        round: 1,
-        profileId: "male-1",
-        name: payload,
-        avatar: "javascript:alert(1)",
-        action: `<svg onload=globalThis.pwned=2>${payload}</svg>`,
-        story: payload,
-        healthStory: payload,
-        heat: 50,
-        anxiety: 0,
-        risk: 0
-      },
-      {
-        round: 2,
-        name: payload,
-        gender: "male",
-        avatar: "javascript:alert(1)",
-        action: payload,
-        heat: 50,
-        anxiety: 0,
-        risk: 0
-      }
-    ]
-  });
-  const harness = createHarness({ savedGame });
-
-  harness.api.finale();
-  const replayHTML = harness.element("replay-list").innerHTML;
-  const state = harness.api.getGame();
-
-  assert.doesNotMatch(replayHTML, /<\s*(?:img|svg|script)\b/i);
-  assert.match(replayHTML, /&lt;img src=x onerror=globalThis\.pwned=1&gt;/);
-  assert.equal(state.log[0].name, harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1").name, "canonical profile must win over stale save fields");
-  assert.equal(state.log[0].avatar, harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1").image);
-  assert.equal(state.log[1].avatar, "", "untrusted avatar URLs must be discarded");
-});
-
-test("a valid profile id wins over every stale name and health field", () => {
-  const harness = createHarness();
-  const target = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-100");
-  const stale = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
-  assert.notEqual(target.name, stale.name);
-  assert.notEqual(target.infected, stale.infected, "the fixture must detect stale health data as well as stale identity data");
-
-  const state = harness.api.normalizeGame({
-    schemaVersion: 7,
-    phase: "summary",
-    round: 1,
-    score: 1,
-    heat: 50,
-    anxiety: 0,
-    infected: false,
-    playerGender: "female",
-    partnerGender: "male",
-    log: [{
-      kind: "encounter",
-      round: 1,
-      profileId: target.id,
-      name: stale.name,
-      gender: stale.gender,
-      avatar: stale.image,
-      x: stale.x,
-      y: stale.y,
-      action: "換一個",
-      heat: 50,
-      anxiety: 0,
-      risk: 0,
-      transmission: false,
-      partnerInfected: stale.infected
-    }]
-  });
-  const entry = state.log[0];
-  const replay = harness.api.renderReplayItem(entry);
-
-  assert.equal(entry.profileId, target.id);
-  assert.equal(entry.name, target.name);
-  assert.equal(entry.avatar, target.image);
-  assert.equal(entry.x, target.x);
-  assert.equal(entry.y, target.y);
-  assert.equal(entry.partnerInfected, target.infected);
-  assert.match(replay, new RegExp(target.name));
-  assert.match(replay, new RegExp(target.title));
-  assert.doesNotMatch(replay, new RegExp(stale.name));
-  assert.doesNotMatch(replay, new RegExp(stale.title));
-});
-
-test("final replay keeps full stories but shows the fictional venue note only once", () => {
-  const harness = createHarness();
-  const healthy = harness.api.data.PARTY_PEOPLE.find(person => !person.infected);
-  const infected = harness.api.data.PARTY_PEOPLE.find(person => person.infected);
-  const entry = (profile, round) => ({
-    kind: "encounter",
-    round,
-    name: profile.name,
-    avatar: profile.image,
-    gender: profile.gender,
-    x: profile.x,
-    y: profile.y,
-    profileId: profile.id,
-    partnerInfected: profile.infected,
-    action: "換一個",
-    heat: 50,
-    anxiety: 0,
-    risk: 0,
-    transmission: false,
-    event: null,
-    skipReason: null
-  });
-  harness.api.setGame({
-    schemaVersion: 6,
-    phase: "finale",
-    round: 2,
-    score: 2,
-    anxiety: 0,
-    heat: 50,
-    testkits: 1,
-    hospitals: 1,
-    infected: false,
-    playerGender: "female",
-    partnerGender: "male",
-    partner: null,
-    log: [entry(healthy, 1), entry(infected, 2)],
-    ended: true,
-    result: "unfinished"
-  });
-
-  harness.api.finale();
-  const overview = harness.element("replay-overview").innerHTML;
-  const replay = harness.element("replay-list").innerHTML;
-  assert.equal((overview.match(/角色與事件皆為虛構/g) || []).length, 1);
-  assert.doesNotMatch(overview, /價值判斷|專業檢測|醫療協助/);
-  assert.match(replay, new RegExp(healthy.title));
-  assert.match(replay, new RegExp(infected.title));
-  assert.doesNotMatch(replay, /角色設定：|健康背景｜|最終狀態｜|未發現感染/, "generic healthy verdicts should not repeat inside every profile");
-  assert.ok(replay.includes(infected.infectionSource), "an infected profile should still unlock its delayed backstory");
-});
-
-function createConversationEngine() {
-  const engine = createHarness().api.conversation;
-  assert.ok(engine, "conversation.js should expose the ConversationEngine browser global");
-  return engine;
-}
-
-function createConversationPerson(overrides = {}) {
-  return {
-    id: "female-18",
-    gender: "female",
-    title: "凌晨兩點的換歌權",
-    story: "她把點歌單折成紙飛機，說每一首歌都得先徵得在場的人同意。",
-    ...overrides
-  };
-}
-
-function revealedCount(clues) {
-  return clues.filter(clue => clue.revealed).length;
-}
-
-test("probing reveals the sole hidden conversation clue in one pass", () => {
-  const engine = createConversationEngine();
-  const person = createConversationPerson();
-  const clues = engine.buildClues(person);
-  const before = revealedCount(clues);
-
-  assert.equal(clues.length, 2);
-  assert.equal(before, 1, "only the opening should be visible before the first probe");
-  assert.match(clues[0].label, /凌晨兩點的換歌權/);
-
-  const firstReveal = engine.revealNextClue(clues, () => 0);
-  assert.ok(["boundary", "story"].includes(firstReveal.id));
-  assert.equal(revealedCount(clues), clues.length, "one probe should uncover the only hidden clue");
-  assert.equal(engine.revealNextClue(clues, () => 0), null, "each table can only be probed once");
-});
-
-test("conversation copy follows the selected character gender", () => {
-  const engine = createConversationEngine();
-  const female = engine.buildClues(createConversationPerson());
-  const male = engine.buildClues(createConversationPerson({ id: "male-18", gender: "male", story: "他把點歌單折成紙飛機。" }));
-
-  assert.match(female[0].dialogue, /她/);
-  assert.match(female[1].label, /她/);
-  assert.match(male[0].dialogue, /他/);
-  assert.match(male[1].label, /他/);
-});
-
-test("round clues keep the complete profile story for finale replay", () => {
-  const engine = createConversationEngine();
-  const person = createConversationPerson();
-  const healthyClues = engine.buildClues({ ...person, infected: false });
-  const infectedClues = engine.buildClues({ ...person, infected: true });
-  const serialised = JSON.stringify(healthyClues);
-
-  assert.doesNotMatch(serialised, new RegExp(person.story.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the complete profile story should stay locked until replay");
-  assert.deepEqual(healthyClues, infectedClues, "conversation clues must not hint at infection status");
-  assert.doesNotMatch(serialised, /重要的是|需要的是|專業資訊|照護與支持|角色設定/);
-});
-
-test("all 200 profiles expose exactly one short hidden clue per table", () => {
-  const harness = createHarness();
-  const engine = harness.api.conversation;
-
-  harness.api.data.PARTY_PEOPLE.forEach(person => {
-    const clues = engine.buildClues(person);
-    assert.equal(clues.length, 2, `${person.id} should have one opening and one hidden clue`);
-    assert.equal(clues.filter(clue => !clue.revealed).length, 1, `${person.id} should need only one probe`);
-    assert.ok(clues.every(clue => clue.dialogue.length <= 76), `${person.id} round copy should stay concise`);
-    assert.ok(clues.every(clue => clue.dialogue !== person.story), `${person.id} full story should remain a replay unlock`);
-  });
-});
-
-test("once every clue is known, probing produces no further clue", () => {
-  const engine = createConversationEngine();
-  const clues = engine.buildClues(createConversationPerson());
-
-  while (engine.revealNextClue(clues, () => 0)) {
-    // Keep probing until the engine explicitly reports that there is nothing left.
+test("tag weights really determine the hidden partner-risk value",()=>{
+  const {SoloEngine,__DATA}=loadRuntime();
+  const random=lcg(7);
+  for(let index=0;index<1000;index++){
+    const profile=__DATA.PARTY_PEOPLE[index%200];
+    const partner=SoloEngine.buildPartner(profile,index+1,random);
+    const sum=partner.tags.reduce((total,tag)=>total+(Number(tag.riskDelta)||0),0);
+    const expected=Math.max(__DATA.GAME_CONFIG.minPartnerRisk,Math.min(__DATA.GAME_CONFIG.maxPartnerRisk,__DATA.GAME_CONFIG.basePartnerRisk+sum));
+    assert.ok(Math.abs(partner.partnerRisk-expected)<1e-12);
   }
-
-  const finalSnapshot = clues.map(clue => ({ id: clue.id, revealed: clue.revealed }));
-  assert.ok(clues.every(clue => clue.revealed));
-  assert.equal(engine.revealNextClue(clues, () => 0), null, "the UI can use null to disable the chat control");
-  assert.deepEqual(
-    clues.map(clue => ({ id: clue.id, revealed: clue.revealed })),
-    finalSnapshot,
-    "a completed conversation must stay completed when the player presses chat again"
-  );
 });
 
-test("a test kit reveals all conversation clues without exposing a health verdict", () => {
-  const engine = createConversationEngine();
-  const clues = engine.buildClues(createConversationPerson({ infected: true }));
-
-  const result = engine.revealAllClues(clues);
-  const serialisedClues = JSON.stringify(result);
-
-  assert.strictEqual(result, clues, "the supplied round clue state should be updated in place");
-  assert.ok(result.every(clue => clue.revealed), "testing should reveal the complete conversation record at once");
-  assert.doesNotMatch(serialisedClues, /infected|感染|陽性|陰性|帶原/i, "the conversation system must not turn a test into an infection-status oracle");
+test("character identity no longer fixes the health bottom card",()=>{
+  const {SoloEngine,__DATA}=loadRuntime();
+  const profile=__DATA.PARTY_PEOPLE[0];
+  const outcomes=new Set();
+  for(let seed=1;seed<=120;seed++)outcomes.add(SoloEngine.buildPartner(profile,1,lcg(seed)).infected);
+  assert.deepEqual([...outcomes].sort(),[false,true]);
 });
 
-test("an abnormal test result locks intimate actions but keeps leaving available", () => {
-  const engine = createConversationEngine();
-  const clues = engine.buildClues(createConversationPerson());
-  const locks = engine.getActionLocks(clues, { tested: true, abnormal: true });
-
-  assert.deepEqual(Object.keys(locks).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
-  assert.match(locks.sex_condom, /試紙顯示異常/);
-  assert.equal(locks.refuse, undefined);
+test("the first hundred draws of one gender do not repeat a character",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame("female","male");
+  const random=lcg(16);
+  const ids=[];
+  for(let turn=1;turn<=100;turn++){
+    const partner=SoloEngine.drawPartner(game,random);
+    ids.push(partner.profileId);
+    game.history.push({profileId:partner.profileId});
+    game.currentPartner=null;
+  }
+  assert.equal(new Set(ids).size,100);
 });
 
-test("a saved hidden last clue cannot become the active dialogue", () => {
-  const harness = createHarness();
-  const profile = harness.api.data.PARTY_PEOPLE.find(person => person.id === "male-1");
-  const normalized = harness.api.normalizeGame({
-    round: 0,
-    phase: "round",
-    playerGender: "female",
-    partnerGender: "male",
-    partner: {
-      profileId: profile.id,
-      round: 1,
-      clues: [{ id: "opening", revealed: true }],
-      lastClueId: "boundary",
-      tested: false
-    }
-  });
-
-  assert.equal(normalized.partner.lastClueId, "opening");
-  assert.equal(normalized.partner.clues.find(clue => clue.id === "boundary").revealed, false);
+test("probing costs one night and three heat, reveals one clue, and cannot repeat",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(5));
+  const id=game.currentPartner.profileId;
+  assert.equal(SoloEngine.hiddenTags(game.currentPartner).length,1);
+  const first=SoloEngine.probe(game);
+  assert.equal(first.ok,true);
+  assert.equal(game.heat,53);
+  assert.equal(game.turn,2);
+  assert.equal(game.currentPartner.profileId,id);
+  assert.equal(SoloEngine.hiddenTags(game.currentPartner).length,0);
+  SoloEngine.continueAfterFeedback(game);
+  const snapshot=JSON.stringify(game);
+  assert.equal(SoloEngine.probe(game).ok,false);
+  assert.equal(JSON.stringify(game),snapshot);
 });
 
-test("legacy multi-part chat progress upgrades to the new single clue", () => {
-  const harness = createHarness();
-  const profile = harness.api.data.PARTY_PEOPLE.find(person => {
-    const hidden = harness.api.conversation.buildClues(person)[1];
-    return hidden.id === "boundary";
-  });
-  const normalized = harness.api.normalizeGame({
-    round: 0,
-    phase: "round",
-    playerGender: "female",
-    partnerGender: profile.gender,
-    partner: {
-      profileId: profile.id,
-      round: 1,
-      clues: [
-        { id: "opening", revealed: true },
-        { id: "story", revealed: true },
-        { id: "scene", revealed: false },
-        { id: "boundary", revealed: false }
-      ],
-      lastClueId: "story",
-      tested: false
-    }
-  });
-
-  assert.ok(normalized.partner.clues.every(clue => clue.revealed), "a player who already chatted should not pay again after the upgrade");
-  assert.equal(normalized.partner.lastClueId, "boundary");
+test("the single test kit reveals only the current partner and spends no night",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(8));
+  game.currentPartner.infected=true;
+  const beforeTurn=game.turn;
+  const result=SoloEngine.testPartner(game);
+  assert.equal(result.ok,true);
+  assert.equal(result.infected,true);
+  assert.equal(game.turn,beforeTurn);
+  assert.equal(game.testkits,0);
+  assert.equal(game.infected,false);
+  assert.ok(game.currentPartner.tags.every(tag=>tag.revealed));
+  assert.equal(game.history.length,1);
+  assert.equal(game.history[0].type,"test");
+  assert.equal(game.history[0].checkResult,"positive");
+  assert.equal(game.history[0].partner.profileId,game.currentPartner.profileId);
+  assert.equal(SoloEngine.testPartner(game).ok,false);
 });
 
-test("an abnormal tested partner cannot advance an intimate action through direct resolve", () => {
-  const harness = createHarness();
-  const engine = harness.api.conversation;
-  const profile = harness.api.data.PARTY_PEOPLE.find(person => {
-    const boundary = engine.buildClues(person).find(clue => clue.id === "boundary");
-    return person.infected && !boundary;
-  });
-  assert.ok(profile, "the library should include an infected profile with no separate boundary lock");
-  const clues = engine.buildClues(profile);
-  engine.revealAllClues(clues);
-  harness.api.setGame({
-    schemaVersion: 6,
-    phase: "round",
-    round: 0,
-    score: 0,
-    anxiety: 0,
-    heat: 50,
-    testkits: 0,
-    hospitals: 1,
-    infected: false,
-    playerGender: "female",
-    partnerGender: "male",
-    partner: {
-      profileId: profile.id,
-      avatar: profile.image,
-      x: profile.x,
-      y: profile.y,
-      name: profile.name,
-      gender: profile.gender,
-      flirt: "測試",
-      clues,
-      lastClueId: clues[1].id,
-      infected: true,
-      tested: true,
-      round: 1
-    },
-    log: [],
-    ended: false,
-    result: null
-  });
-
-  harness.api.renderActions();
-  assert.match(harness.element("action-buttons").innerHTML, /<button type="button"/);
-  assert.match(harness.element("action-buttons").innerHTML, /aria-disabled=\"true\"/);
-  assert.doesNotMatch(harness.element("action-buttons").innerHTML, /disabled aria-disabled/);
-  harness.api.resolve("sex_condom");
-
-  const state = harness.api.getGame();
-  assert.equal(state.round, 0);
-  assert.equal(state.log.length, 0);
-  assert.equal(state.phase, "round");
+test("the partner test reveals the bottom card without rewriting available actions",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(20));
+  game.currentPartner.infected=true;
+  game.currentPartner.tags=game.currentPartner.tags.filter(tag=>!tag.constraint);
+  while(game.currentPartner.tags.length<3)game.currentPartner.tags.push({id:"after_work",label:"剛下班",tone:"neutral",riskDelta:0,constraint:null,revealed:true});
+  SoloEngine.testPartner(game);
+  const locks=SoloEngine.getActionLocks(game.currentPartner);
+  assert.equal(Object.keys(locks).length,0);
+  assert.equal(locks.refuse,undefined);
+  const available=Array.from(SoloEngine.ACTION_KEYS).find(key=>!locks[key]);
+  assert.equal(SoloEngine.takeAction(game,available,fixed(0)).ok,true);
 });
 
-test("only revealed boundaries lock the incompatible actions and always preserve leaving", () => {
-  const engine = createConversationEngine();
-  const clues = [
-    { id: "protection", revealed: true, constraint: "condom_only" },
-    { id: "oral", revealed: true, constraint: "no_oral" },
-    { id: "unspoken", revealed: false, constraint: "no_intimacy" }
+test("revealed boundaries are real constraints and use no lecture copy",()=>{
+  const {SoloEngine,__DATA}=loadRuntime();
+  const partner=SoloEngine.buildPartner(__DATA.PARTY_PEOPLE[0],1,lcg(31));
+  partner.tested=false;
+  partner.tags=[
+    {id:"condom_only",label:"只接受有戴套",tone:"boundary",riskDelta:0,constraint:"condom_only",revealed:true},
+    {id:"after_work",label:"剛下班",tone:"neutral",riskDelta:0,constraint:null,revealed:true},
+    {id:"status_uncertain",label:"近期狀態：說不準",tone:"risk",riskDelta:.25,constraint:null,revealed:false}
   ];
-
-  const locks = engine.getActionLocks(clues);
-  assert.deepEqual(Object.keys(locks).sort(), ["oral_condom", "oral_raw", "sex_raw"]);
-  assert.match(locks.oral_condom, /口腔親密/);
-  assert.match(locks.oral_raw, /有保護/);
-  assert.match(locks.sex_raw, /有保護/);
-  assert.equal(locks.sex_condom, undefined, "an option outside the stated boundaries remains available");
-  assert.equal(locks.refuse, undefined, "leaving must never be locked by another person's boundary");
-
-  const allIntimacyLocked = engine.getActionLocks([{ id: "chat-only", revealed: true, constraint: "no_intimacy" }]);
-  assert.deepEqual(Object.keys(allIntimacyLocked).sort(), ["oral_condom", "oral_raw", "sex_condom", "sex_raw"]);
-  assert.match(allIntimacyLocked.sex_condom, /今晚只聊天/);
+  const locks=SoloEngine.getActionLocks(partner);
+  assert.equal(locks.oral_raw,"對方拒絕");
+  assert.equal(locks.sex_raw,"對方拒絕");
+  assert.equal(locks.oral_condom,undefined);
+  assert.equal(locks.sex_condom,undefined);
 });
 
-test("the production document contains every required interactive mount point", () => {
-  const markup = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-  const requiredIds = [
-    "consent-checkbox", "start-btn", "new-game-btn", "resume-note", "load-error",
-    "chat-btn", "test-btn", "hospital-btn", "chat-history", "chat-history-list",
-    "action-buttons", "next-btn", "restart-btn", "finale-image", "toast"
-  ];
-
-  requiredIds.forEach(id => {
-    assert.match(markup, new RegExp(`id="${id}"`), `index.html must contain #${id}`);
-  });
-  const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
-  assert.equal(new Set(ids).size, ids.length, "interactive IDs must remain unique");
-  const scriptOrder = ["data.js", "stories.js", "extra-stories.js", "chaos.js", "conversation.js", "app.js"]
-    .map(filename => markup.indexOf(`src="./${filename}`));
-  assert.ok(scriptOrder.every((position, index) => position > -1 && (index === 0 || position > scriptOrder[index - 1])), "browser globals must load in dependency order");
-  assert.match(markup, /role="group" aria-labelledby="action-title"/);
-  assert.match(markup, /width="1672" height="941" decoding="async"/);
+test("infection remains delayed after an action and hospital is the early reveal",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(45));
+  game.currentPartner.infected=true;
+  game.currentPartner.tested=false;
+  game.currentPartner.tags=game.currentPartner.tags.filter(tag=>!tag.constraint);
+  while(game.currentPartner.tags.length<3)game.currentPartner.tags.push({id:"after_work",label:"剛下班",tone:"neutral",riskDelta:0,constraint:null,revealed:true});
+  const action=SoloEngine.takeAction(game,"sex_raw",fixed(0));
+  assert.equal(action.ok,true);
+  assert.equal(game.infected,true);
+  assert.equal(game.result,null);
+  assert.doesNotMatch(game.feedback.body,/感染|陽性|陰性|確診|觸發/);
+  SoloEngine.continueAfterFeedback(game);
+  SoloEngine.drawPartner(game,lcg(46));
+  const hospital=SoloEngine.hospital(game);
+  assert.equal(hospital.result,"hospital_positive");
+  assert.equal(game.result,"hospital_positive");
 });
 
-test("start still enforces the consent reminder when called directly", () => {
-  const harness = createHarness();
-  harness.element("consent-checkbox").checked = false;
-
-  harness.api.start();
-
-  assert.equal(harness.api.getGame(), null);
-  assert.match(harness.element("toast").textContent, /先勾選進場聲明/);
+test("solo transmission tuning keeps the original action ladder without the original harshness",()=>{
+  const {__DATA}=loadRuntime();
+  assert.equal(__DATA.GAME_CONFIG.transmissionScale,.5);
+  assert.deepEqual(Object.values(__DATA.ACTIONS).map(action=>action.risk),[1,8,30,70,0]);
 });
 
-test("corrupt persisted data is discarded instead of retried on every launch", () => {
-  const harness = createHarness({ savedGame: "{not json" });
-
-  assert.equal(harness.api.getGame(), null);
-  assert.equal(harness.getSavedGame(), null);
+test("hospital can be used repeatedly, clears pressure, and adds ten heat",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(2));
+  game.currentPartner.infected=false;
+  game.anxiety=67;
+  const first=SoloEngine.hospital(game);
+  assert.equal(first.ok,true);
+  assert.equal(first.result,null);
+  assert.equal(game.heat,60);
+  assert.equal(game.anxiety,0);
+  assert.equal(game.turn,2);
+  SoloEngine.continueAfterFeedback(game);
+  const second=SoloEngine.hospital(game);
+  assert.equal(second.ok,true);
+  assert.equal(game.heat,70);
+  assert.equal(game.turn,3);
 });
 
-test("runtime avatar and ending assets use the optimized delivery paths", () => {
-  const { data } = createHarness().api;
-  assert.ok(data.AVATAR_SHEETS.male.every(pathname => pathname.includes("/optimized/avatars/") && pathname.endsWith(".jpg")));
-  assert.ok(data.AVATAR_SHEETS.female.every(pathname => pathname.includes("/optimized/avatars/") && pathname.endsWith(".jpg")));
+test("hospital records its own result and reveals infection before a simultaneous heat limit",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(3));
+  game.infected=true;
+  game.heat=90;
+  const result=SoloEngine.hospital(game);
+  assert.equal(result.result,"hospital_positive");
+  assert.equal(result.entry.checkResult,"positive");
+});
 
-  const harness = createHarness();
-  harness.api.start();
-  harness.api.getGame().heat = 0;
-  harness.api.getGame().round = data.GAME_CONFIG.roundCount;
-  harness.api.getGame().phase = "summary";
-  harness.api.finale();
-  assert.match(harness.element("finale-image").src, /optimized\/endings\//);
-  assert.match(harness.element("finale-image").srcset, /640w/);
+test("pressure surcharge is part of the displayed-cost source of truth",()=>{
+  const {SoloEngine}=loadRuntime();
+  assert.equal(SoloEngine.pressureDelta(0,2),2);
+  assert.equal(SoloEngine.pressureDelta(19,2),4);
+  assert.equal(SoloEngine.pressureDelta(21,0),2);
+  assert.equal(SoloEngine.pressureDelta(98,30),2);
+  assert.match(read("app.js"),/SoloEngine\.pressureDelta\(game\.anxiety,action\.anxiety\)/);
+  assert.match(read("app.js"),/SoloEngine\.pressureDelta\(game\.anxiety,0\)/);
+});
+
+test("the engine has no round cap and only the five original-style endings",()=>{
+  const {SoloEngine,__DATA}=loadRuntime();
+  assert.equal(__DATA.GAME_CONFIG.roundCount,undefined);
+  assert.deepEqual(Object.keys(__DATA.ENDINGS).sort(),["anxiety","final_positive","hospital_positive","urge","victory"]);
+  const game=SoloEngine.createGame();
+  game.turn=41;
+  SoloEngine.drawPartner(game,lcg(60));
+  game.currentPartner.infected=false;
+  game.currentPartner.tags=game.currentPartner.tags.filter(tag=>!tag.constraint);
+  const result=SoloEngine.takeAction(game,"oral_condom",fixed(.99));
+  assert.equal(result.ok,true);
+  assert.equal(game.turn,42);
+  assert.equal(game.result,null);
+});
+
+test("heat zero resolves only at the final flip and pressure 100 wins priority",()=>{
+  const {SoloEngine}=loadRuntime();
+  const healthy=SoloEngine.createGame();
+  SoloEngine.drawPartner(healthy,lcg(71));
+  healthy.currentPartner.infected=false;
+  healthy.currentPartner.tags=healthy.currentPartner.tags.filter(tag=>!tag.constraint);
+  healthy.heat=14;
+  assert.equal(SoloEngine.takeAction(healthy,"sex_raw",fixed(.99)).result,"victory");
+
+  const infected=SoloEngine.createGame();
+  SoloEngine.drawPartner(infected,lcg(72));
+  infected.currentPartner.infected=true;
+  infected.currentPartner.tags=infected.currentPartner.tags.filter(tag=>!tag.constraint);
+  infected.heat=14;
+  assert.equal(SoloEngine.takeAction(infected,"sex_raw",fixed(0)).result,"final_positive");
+
+  const anxious=SoloEngine.createGame();
+  SoloEngine.drawPartner(anxious,lcg(73));
+  anxious.currentPartner.infected=false;
+  anxious.currentPartner.tags=anxious.currentPartner.tags.filter(tag=>!tag.constraint);
+  anxious.heat=14;
+  anxious.anxiety=68;
+  assert.equal(SoloEngine.takeAction(anxious,"sex_raw",fixed(.99)).result,"anxiety");
+});
+
+test("heat 100 ends without fabricating an extra action",()=>{
+  const {SoloEngine}=loadRuntime();
+  const game=SoloEngine.createGame();
+  SoloEngine.drawPartner(game,lcg(80));
+  game.heat=92;
+  const result=SoloEngine.takeAction(game,"refuse",fixed(0));
+  assert.equal(result.result,"urge");
+  assert.equal(result.entry.actionLabel,"換一個");
+  assert.equal(result.entry.transmission,false);
+  assert.equal(game.history.length,1);
+});
+
+test("visible production copy contains rules and results, not safety-education language",()=>{
+  const visible=[read("index.html"),read("data.js"),read("app.js"),read("engine.js")].join("\n");
+  for(const phrase of ["健康教育","安全衛教","現實互動","以本人同意","保護為前提","重要提醒","作品立場","合規聲明","醫療協助","照護與支持","價值判斷","請諮詢","務必","記得保護"]){
+    assert.doesNotMatch(visible,new RegExp(phrase));
+  }
+  for(const stereotype of ["剛結束一段關係","剛從上一攤過來","不想談最近狀態","近期沒有其他對象","成人虛構單機遊戲","原版核心"]){
+    assert.doesNotMatch(visible,new RegExp(stereotype));
+  }
+});
+
+test("strict CSP keeps sprites and meters free of inline styles",()=>{
+  const runtime=loadRuntime({withApp:true});
+  const html=read("index.html");
+  const styles=read("styles.css");
+  assert.match(html,/style-src 'self'/);
+  assert.doesNotMatch(html,/unsafe-inline/);
+  assert.match(html,/<progress class="meter" id="heat-meter"/);
+  const person=runtime.__DATA.PARTY_PEOPLE[0];
+  const markup=runtime.SoloApp.avatarMarkup({avatar:person.image,x:person.x,y:person.y});
+  assert.doesNotMatch(markup,/style=/);
+  assert.match(markup,/sheet-male-1/);
+  assert.match(markup,/sprite-x-0/);
+  assert.match(markup,/sprite-y-0/);
+  assert.match(styles,/\.replay-avatar,.replay-icon\{[^}]*background-color:/);
+  assert.doesNotMatch(styles,/\.replay-avatar,.replay-icon\{[^}]*background:/);
+  for(const avatar of Object.values(runtime.__DATA.AVATAR_SHEETS).flat())assert.match(styles,new RegExp(avatar.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/^\.\//,"")));
+});
+
+test("replay uses the stored tool result instead of guessing from the final ending",()=>{
+  const runtime=loadRuntime({withApp:true});
+  const hospital=runtime.SoloApp.renderReplayItem({type:"hospital",turn:4,checkResult:"positive",heat:100,anxiety:0});
+  assert.match(hospital,/結果：感染/);
+  assert.doesNotMatch(hospital,/未見感染/);
+  const person=runtime.__DATA.PARTY_PEOPLE[0];
+  const partner=runtime.SoloEngine.buildPartner(person,1,lcg(4));
+  const testRow=runtime.SoloApp.renderReplayItem({type:"test",turn:1,checkResult:"negative",partner});
+  assert.match(testRow,/對方試紙/);
+  assert.match(testRow,/結果：未見異常/);
+  assert.match(testRow,/不經過一晚/);
+});
+
+test("the formal GitHub Pages entry is canonical everywhere",()=>{
+  const html=read("index.html");
+  assert.match(html,/https:\/\/victoriac1122\.github\.io\/happy-party-game-solo\//);
+  assert.doesNotMatch(html,/victoriachengyw\.com/);
+  assert.equal(read("robots.txt").trim().endsWith("https://victoriac1122.github.io/happy-party-game-solo/sitemap.xml"),true);
+  assert.match(read("sitemap.xml"),/https:\/\/victoriac1122\.github\.io\/happy-party-game-solo\//);
+});
+
+test("all ending and avatar assets referenced at runtime exist",()=>{
+  const {__DATA}=loadRuntime();
+  for(const ending of Object.values(__DATA.ENDINGS)){
+    assert.equal(fs.existsSync(path.join(ROOT,ending.image.replace(/^\.\//,""))),true,ending.image);
+    for(const candidate of ending.imageSrcSet.split(",")){
+      const relative=candidate.trim().split(/\s+/)[0].replace(/^\.\//,"");
+      assert.equal(fs.existsSync(path.join(ROOT,relative)),true,relative);
+    }
+  }
+  for(const avatar of Object.values(__DATA.AVATAR_SHEETS).flat()){
+    assert.equal(fs.existsSync(path.join(ROOT,avatar.replace(/^\.\//,""))),true,avatar);
+  }
+});
+
+test("corrupt or legacy saves are rejected instead of migrating removed systems",()=>{
+  const runtime=loadRuntime({withApp:true});
+  assert.equal(runtime.SoloApp.normalizeGame(null),null);
+  assert.equal(runtime.SoloApp.normalizeGame({schemaVersion:7,score:99,log:[{event:{title:"chaos"}}]}),null);
+  assert.equal(runtime.SoloApp.normalizeGame({schemaVersion:1,playerGender:"x",partnerGender:"male"}),null);
+});
+
+test("a valid long-running save does not reset after night 300",()=>{
+  const runtime=loadRuntime({withApp:true});
+  const game=runtime.SoloEngine.createGame();
+  game.turn=301;
+  runtime.SoloEngine.drawPartner(game,lcg(90));
+  const restored=runtime.SoloApp.normalizeGame(JSON.parse(JSON.stringify(game)));
+  assert.equal(restored.turn,301);
+  assert.equal(restored.currentPartner.profileId,game.currentPartner.profileId);
 });

@@ -1,399 +1,461 @@
-const STORE="happy-party-solo-v4";
-const GAME_SCHEMA_VERSION=7;
-const VALID_GENDERS=new Set(["male","female"]);
+const STORE="happy-party-solo-clean-v1";
 const VALID_RESULTS=new Set(Object.keys(ENDINGS));
-const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).reduce((all,sheets)=>all.concat(sheets),["./assets/male-avatars-a.png","./assets/male-avatars-b.png","./assets/female-avatars-a.png","./assets/female-avatars-b.png","./assets/optimized/avatars/male-avatars-b.jpg","./assets/optimized/avatars/female-avatars-a.jpg"]));
-const PASSIVE_ACTIONS={chatOverload:{short:"刺探後壓抑失控",score:0,risk:0}};
-let game;
+const VALID_GENDERS=new Set(["male","female"]);
+const TAG_CATALOG=new Map([...STATUS_TAGS,...VIBE_TAGS,...BOUNDARY_TAGS].map(tag=>[tag.id,tag]));
+const KNOWN_AVATARS=new Set(Object.values(AVATAR_SHEETS).flat());
+const AVATAR_CLASS_BY_PATH=new Map(Object.entries(AVATAR_SHEETS).flatMap(([gender,paths])=>paths.map((path,index)=>[path,`sheet-${gender}-${index+1}`])));
+let game=null;
 let interactionLocked=false;
-let storageNoticeShown=false;
+let storageWarningShown=false;
+
 const $=id=>document.getElementById(id);
-const pick=items=>items[Math.floor(Math.random()*items.length)];
-const clamp=value=>Math.max(0,Math.min(100,value));
-const safeInteger=(value,min,max,fallback)=>{const number=Number(value);return Number.isInteger(number)&&number>=min&&number<=max?number:fallback};
-const safePercent=(value,fallback=0)=>{const number=Number(value);return Number.isFinite(number)?clamp(number):fallback};
-const isSpriteCoordinate=value=>Number.isInteger(Number(value))&&Number(value)>=0&&Number(value)<=4;
-const isKnownAvatar=value=>typeof value==="string"&&KNOWN_AVATARS.has(value);
-const safeText=(value,maxLength=220)=>typeof value==="string"?value.slice(0,maxLength):"";
-const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[character]);
+const clamp=value=>Math.max(0,Math.min(100,Number(value)||0));
+const safeText=(value,length=120)=>typeof value==="string"?value.slice(0,length):"";
+const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[char]);
+const findProfile=id=>PARTY_PEOPLE.find(person=>person.id===id)||null;
 const genderLabel=gender=>gender==="female"?"女":"男";
-const conversation=()=>globalThis.ConversationEngine;
-const hiddenClues=partner=>Array.isArray(partner?.clues)?partner.clues.filter(clue=>!clue.revealed):[];
-const currentClue=partner=>partner?.clues?.find(clue=>clue.revealed&&clue.id===partner.lastClueId)||partner?.clues?.find(clue=>clue.revealed)||null;
-const actionLocks=partner=>conversation()?.getActionLocks?.(partner?.clues,{tested:Boolean(partner?.tested),abnormal:Boolean(partner?.tested&&partner?.infected)})||{};
-const conversationReady=()=>["buildClues","restoreClues","revealNextClue","revealAllClues","getActionLocks"].every(method=>typeof conversation()?.[method]==="function");
-function restoreConversationClues(profile,rawClues,legacyChat,tested){
-  const engine=conversation();
-  return engine?.restoreClues?engine.restoreClues(profile,rawClues,legacyChat,tested):[];
-}
-function buildPartner(profile,options={}){
-  const clues=restoreConversationClues(profile,options.clues,options.legacyChat,options.tested),lastRevealed=clues.slice().reverse().find(clue=>clue.revealed),lastClueId=clues.some(clue=>clue.revealed&&clue.id===options.lastClueId)?options.lastClueId:(lastRevealed?.id||null);
-  return{profileId:profile.id,avatar:profile.image,x:profile.x,y:profile.y,name:profile.name,gender:profile.gender,flirt:FLIRT_LINES.includes(options.flirt)?options.flirt:FLIRT_LINES[0],clues,lastClueId,infected:profile.infected,tested:Boolean(options.tested),round:options.round};
-}
+const signed=value=>`${value>=0?"+":""}${value}`;
 
 document.addEventListener("DOMContentLoaded",()=>{
-  $("toast").setAttribute("role","status");
-  $("toast").setAttribute("aria-live","polite");
-  $("warning").setAttribute("role","status");
-  $("warning").setAttribute("aria-live","polite");
-  $("consent-checkbox").onchange=event=>{$("start-btn").disabled=!event.target.checked};
-  $("start-btn").onclick=start;
-  $("chat-btn").onclick=chat;
-  $("test-btn").onclick=test;
-  $("hospital-btn").onclick=hospital;
-  $("next-btn").onclick=next;
-  $("restart-btn").onclick=start;
+  $("start-btn").onclick=startNewGame;
   $("new-game-btn").onclick=prepareNewGame;
-  if(!conversationReady()){
+  $("probe-btn").onclick=probe;
+  $("test-btn").onclick=testPartner;
+  $("hospital-btn").onclick=visitHospital;
+  $("continue-btn").onclick=continueGame;
+  $("restart-btn").onclick=restartSameSetup;
+  if(!globalThis.SoloEngine){
     $("load-error").classList.remove("hidden");
-    $("start-btn").disabled=false;
-    $("start-btn").textContent="重新載入遊戲";
+    $("start-btn").textContent="重新整理";
     $("start-btn").onclick=()=>window.location.reload();
     return;
   }
   game=loadGame();
-  configureResumeButton();
+  configureIntro();
 });
 
-function createGame(){return{schemaVersion:GAME_SCHEMA_VERSION,phase:"round",round:0,score:0,anxiety:0,heat:50,testkits:1,hospitals:1,infected:false,playerGender:$("player-gender").value,partnerGender:$("partner-gender").value,partner:null,log:[],ended:false,result:null}}
-function loadGame(){
-  for(const key of ["localStorage","sessionStorage"]){
-    try{
-      const storage=window[key],raw=storage.getItem(STORE);
-      if(!raw)continue;
-      const restored=normalizeGame(JSON.parse(raw));
-      if(restored)return restored;
-      storage.removeItem(STORE);
-    }catch{
-      try{window[key].removeItem(STORE)}catch{}
-    }
-  }
-  return null;
-}
-function normalizeGame(raw){
-  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
-  const restored=createGame(),sourceSchema=safeInteger(raw.schemaVersion,1,Number.MAX_SAFE_INTEGER,0);
-  restored.round=safeInteger(raw.round,0,GAME_CONFIG.roundCount,0);
-  restored.score=safeInteger(raw.score,-999,999,0);
-  restored.anxiety=safePercent(raw.anxiety,0);
-  restored.heat=safePercent(raw.heat,50);
-  restored.testkits=safeInteger(raw.testkits,0,1,1);
-  restored.hospitals=safeInteger(raw.hospitals,0,1,1);
-  restored.playerGender=VALID_GENDERS.has(raw.playerGender)?raw.playerGender:"female";
-  restored.partnerGender=VALID_GENDERS.has(raw.partnerGender)?raw.partnerGender:"male";
-  const normalizedLog=Array.isArray(raw.log)?raw.log.map(normalizeRecord).filter(Boolean):[];
-  restored.log=migrateLegacyTimeline(normalizedLog,restored.round,sourceSchema);
-  restored.result=VALID_RESULTS.has(raw.result)?raw.result:null;
-  restored.infected=raw.infected===true||restored.log.some(entry=>entry.transmission)||restored.result==="final_positive"||restored.result==="hospital_positive";
-  if(restored.infected&&(restored.result==="victory"||restored.result==="unfinished"))restored.result="final_positive";
-  restored.ended=Boolean(raw.ended)||Boolean(restored.result);
-  restored.phase=raw.phase==="summary"?"summary":"round";
-  if(!restored.ended&&restored.phase==="round"&&restored.round<GAME_CONFIG.roundCount)restored.partner=normalizePartner(raw.partner,restored.round+1);
-  if(restored.ended||restored.round>=GAME_CONFIG.roundCount)restored.phase="finale";
-  return restored;
-}
-function normalizePartner(raw,expectedRound){
-  const profile=findPartyProfile(raw);
-  if(!profile||safeInteger(raw?.round,1,GAME_CONFIG.roundCount,0)!==expectedRound)return null;
-  return buildPartner(profile,{flirt:raw.flirt,clues:raw.clues,legacyChat:Boolean(raw.chat),tested:Boolean(raw.tested),lastClueId:safeText(raw.lastClueId,40),round:expectedRound});
-}
-function normalizeRecord(raw){
-  if(!raw||typeof raw!=="object")return null;
-  const round=safeInteger(raw.round,1,GAME_CONFIG.roundCount,0);
-  if(!round)return null;
-  const profile=findPartyProfile(raw),event=normalizeChaosEvent(raw.event),skipReason=normalizeChaosEvent(raw.skipReason),kind=raw.kind==="skipped"?"skipped":"encounter",risk=safePercent(raw.risk,0),transmission=kind==="encounter"&&risk>0&&raw.transmission===true,partnerInfected=Boolean(transmission||(profile?.infected??(raw.partnerInfected===true)));
-  return{kind,round,name:profile?.name||safeText(raw.name,80)||(kind==="skipped"?"突發快轉":"未記錄對象"),avatar:profile?.image||(isKnownAvatar(raw.avatar)?raw.avatar:""),gender:profile?.gender||(VALID_GENDERS.has(raw.gender)?raw.gender:null),x:profile?.x??(isSpriteCoordinate(raw.x)?Number(raw.x):0),y:profile?.y??(isSpriteCoordinate(raw.y)?Number(raw.y):0),profileId:profile?.id||null,action:safeText(raw.action,110)||(kind==="skipped"?"突發事件略過一晚":"未記錄行動"),heat:safePercent(raw.heat,0),anxiety:safePercent(raw.anxiety,0),risk,transmission,partnerInfected,event,skipReason};
-}
-function migrateLegacyTimeline(entries,finalRound,sourceSchema){
-  if(sourceSchema>=5)return entries.slice(0,GAME_CONFIG.roundCount);
-  const occupied=new Set(entries.map(entry=>entry.round)),migrated=[];
-  entries.forEach(entry=>{
-    if(migrated.length>=GAME_CONFIG.roundCount)return;
-    const appliedSkip=Boolean(entry.event?.skip&&entry.round<finalRound&&entry.round<GAME_CONFIG.roundCount);
-    if(appliedSkip)entry.event={...entry.event,appliedSkip:true};
-    migrated.push(entry);
-    const skippedRound=entry.round+1;
-    if(!appliedSkip||occupied.has(skippedRound)||skippedRound>finalRound||migrated.length>=GAME_CONFIG.roundCount)return;
-    const skipReason={...entry.event,appliedSkip:true};
-    migrated.push({kind:"skipped",round:skippedRound,name:"突發快轉",avatar:"",gender:null,x:0,y:0,profileId:null,partnerInfected:false,action:"今晚被突發事件略過",heat:entry.heat,anxiety:entry.anxiety,risk:0,transmission:false,event:null,skipReason});
-    occupied.add(skippedRound);
-  });
-  return migrated.slice(0,GAME_CONFIG.roundCount);
-}
-function normalizeChaosEvent(raw){
-  const title=safeText(raw?.title,90),event=CHAOS_EVENTS.find(candidate=>candidate.title===title);
-  return event?{...event,appliedSkip:Boolean(raw?.appliedSkip)}:null;
-}
-function configureResumeButton(){
-  const startButton=$("start-btn");
-  const playerGender=$("player-gender"),partnerGender=$("partner-gender"),resumeNote=$("resume-note"),newGameButton=$("new-game-btn");
-  if(!game){
-    playerGender.disabled=false;partnerGender.disabled=false;
-    resumeNote.classList.add("hidden");newGameButton.classList.add("hidden");
-    startButton.textContent="一個人也能開喝";startButton.onclick=start;
-    startButton.disabled=!$("consent-checkbox").checked;
-    return;
-  }
-  playerGender.value=game.playerGender;partnerGender.value=game.partnerGender;
-  playerGender.disabled=true;partnerGender.disabled=true;
-  resumeNote.textContent="本局設定已鎖定；想換設定可開始全新一局。";
-  resumeNote.classList.remove("hidden");newGameButton.classList.remove("hidden");
-  $("consent-checkbox").checked=true;
-  startButton.disabled=false;
-  if(game.ended||game.round>=GAME_CONFIG.roundCount){startButton.textContent="查看上一趟復盤";startButton.onclick=finale;return}
-  startButton.textContent=game.phase==="summary"?"繼續下一晚":"繼續上一晚";
-  startButton.onclick=renderRound;
-}
-function clearSavedGame(){for(const key of ["localStorage","sessionStorage"]){try{window[key].removeItem(STORE)}catch{}}}
-function prepareNewGame(){
+function startNewGame(){
   if(interactionLocked)return;
-  if(typeof window.confirm==="function"&&!window.confirm("開始全新一局會捨棄目前進度，確定要繼續嗎？"))return;
-  game=null;clearSavedGame();
-  $("consent-checkbox").checked=false;
-  configureResumeButton();
-  show("intro-screen");
-}
-function start(){
-  if(interactionLocked)return;
-  if(!$("consent-checkbox").checked){toast("先勾選進場聲明。");return}
-  interactionLocked=true;
-  game=createGame();
-  save();
+  game=SoloEngine.createGame($("player-gender").value,$("partner-gender").value);
+  SoloEngine.drawPartner(game);
+  saveGame();
+  hideFeedback();
   renderRound();
 }
-function save(){
-  if(!game)return false;
-  game.schemaVersion=GAME_SCHEMA_VERSION;
-  const snapshot=JSON.stringify(game);
-  for(const key of ["localStorage","sessionStorage"]){
-    try{
-      window[key].setItem(STORE,snapshot);
-      if(key==="sessionStorage"&&!storageNoticeShown&&$("toast")){storageNoticeShown=true;toast("已改用這個分頁暫存進度；關閉分頁後本局會清除。")}
-      return true;
-    }catch{}
+
+function restartSameSetup(){
+  if(interactionLocked)return;
+  const playerGender=game?.playerGender||"female";
+  const partnerGender=game?.partnerGender||"male";
+  clearGame();
+  game=SoloEngine.createGame(playerGender,partnerGender);
+  SoloEngine.drawPartner(game);
+  saveGame();
+  renderRound();
+}
+
+function prepareNewGame(){
+  if(interactionLocked)return;
+  if(game&&typeof window.confirm==="function"&&!window.confirm("放棄目前進度，開新局？"))return;
+  clearGame();
+  game=null;
+  $("player-gender").disabled=false;
+  $("partner-gender").disabled=false;
+  $("resume-note").classList.add("hidden");
+  $("new-game-btn").classList.add("hidden");
+  $("start-btn").textContent="開始";
+  $("start-btn").onclick=startNewGame;
+  hideFeedback();
+  showScreen("intro-screen");
+}
+
+function configureIntro(){
+  if(!game)return;
+  $("player-gender").value=game.playerGender;
+  $("partner-gender").value=game.partnerGender;
+  $("player-gender").disabled=true;
+  $("partner-gender").disabled=true;
+  $("resume-note").textContent=game.result?"上一局已完成。":"進度已保存。";
+  $("resume-note").classList.remove("hidden");
+  $("new-game-btn").classList.remove("hidden");
+  $("start-btn").textContent=game.result?"查看復盤":"繼續";
+  $("start-btn").onclick=resumeGame;
+}
+
+function resumeGame(){
+  if(!game)return;
+  if(game.result)return renderFinale();
+  if(game.phase==="feedback"){
+    renderStats();
+    if(game.currentPartner){
+      renderTools();
+      renderPartner();
+      renderActions();
+    }
+    showScreen("round-screen");
+    showFeedback();
+    return;
   }
-  if(!storageNoticeShown&&$("toast")){storageNoticeShown=true;toast("這台裝置暫時無法儲存進度；本局仍可繼續玩。")}
-  return false;
-}
-function show(id){
-  document.querySelectorAll(".screen").forEach(screen=>screen.classList.add("hidden"));
-  const screen=$(id);
-  screen.classList.remove("hidden");
-  document.body.classList.toggle("gameplay-active",id!=="intro-screen");
-  window.scrollTo({top:0,behavior:"auto"});
-  const heading=screen.querySelector?.("h2");
-  if(heading){heading.tabIndex=-1;try{heading.focus({preventScroll:true})}catch{heading.focus()}}
-}
-function partner(){
-  const pool=PARTY_PEOPLE.filter(person=>person.gender===game.partnerGender),seen=new Set(game.log.map(entry=>entry.profileId).filter(Boolean)),candidates=pool.filter(person=>!seen.has(person.id)),person=pick(candidates.length?candidates:pool);
-  return buildPartner(person,{flirt:pick(FLIRT_LINES),round:game.round+1});
-}
-function avatarMarkup(person,className=""){
-  const avatar=[person?.avatar,person?.image].find(isKnownAvatar);
-  if(!avatar)return"";
-  const x=isSpriteCoordinate(person.x)?Number(person.x):0,y=isSpriteCoordinate(person.y)?Number(person.y):0;
-  return "<span class=\"avatar-sprite "+className+"\" aria-hidden=\"true\" style=\"--sheet:url('"+avatar+"');--x:"+x+";--y:"+y+"\"></span>";
+  renderRound();
 }
 
 function renderRound(){
-  if(!game)return show("intro-screen");
-  if(game.ended||game.round>=GAME_CONFIG.roundCount)return finale();
-  const expectedRound=game.round+1;
-  if(!game.partner||game.partner.round!==expectedRound)game.partner=partner();
-  game.phase="round";
-  save();
-  $("round-title").textContent="第 "+expectedRound+" 晚 / "+GAME_CONFIG.roundCount;
-  $("partner-avatar").innerHTML=game.anxiety>=80?"？":avatarMarkup(game.partner);
-  $("partner-name").textContent=game.anxiety>=80?"看不清楚":game.partner.name;
-  $("partner-flirt").textContent=game.anxiety>=80?"「壓力讓所有資訊都糊成一團。」":"「"+game.partner.flirt+"」";
-  renderStats();renderTags();renderDialogue();
-  renderRoundControls();show("round-screen");unlockInteraction();
-}
-function renderRoundControls(){
-  const unseen=hiddenClues(game.partner),chatButton=$("chat-btn");
-  chatButton.disabled=game.anxiety>=80||unseen.length===0;
-  chatButton.textContent=game.anxiety>=80?"💬 壓力太高，聽不清楚":unseen.length?"💬 試探一次 · 壓抑 +3":"💬 已經聊到底";
-  $("test-btn").disabled=game.testkits<1||game.anxiety>=80||game.partner.tested;
-  $("hospital-btn").disabled=game.hospitals<1;
+  if(!game)return showScreen("intro-screen");
+  if(game.result)return renderFinale();
+  if(game.phase==="feedback")return resumeGame();
+  if(!game.currentPartner)SoloEngine.drawPartner(game);
+  saveGame();
+  $("round-title").textContent=`第 ${game.turn} 晚`;
+  renderStats();
+  renderTools();
+  renderPartner();
   renderActions();
-}
-function renderStats(){
-  $("dissatisfaction-value").textContent=game.heat+"%";$("dissatisfaction-bar").style.width=game.heat+"%";
-  const dissatisfactionMeter=$("dissatisfaction-bar").parentElement;
-  dissatisfactionMeter.setAttribute("role","progressbar");dissatisfactionMeter.setAttribute("aria-label","欲求不滿值");dissatisfactionMeter.setAttribute("aria-valuemin","0");dissatisfactionMeter.setAttribute("aria-valuemax","100");dissatisfactionMeter.setAttribute("aria-valuenow",game.heat);
-  $("anxiety-value").textContent=game.anxiety+"%";$("anxiety-bar").style.width=game.anxiety+"%";
-  const anxietyMeter=$("anxiety-bar").parentElement;
-  anxietyMeter.setAttribute("role","progressbar");anxietyMeter.setAttribute("aria-label","心理壓力");anxietyMeter.setAttribute("aria-valuemin","0");anxietyMeter.setAttribute("aria-valuemax","100");anxietyMeter.setAttribute("aria-valuenow",game.anxiety);
-  $("score-value").textContent=game.score;$("testkit-value").textContent="試紙 "+game.testkits+" · 醫院 "+game.hospitals;
-  $("warning").textContent=game.anxiety>=80?"雜訊蓋過人聲；壓力到 100% 會直接結束。":"高風險的答案不在今晚：醫院或第 10 晚才翻牌。";
-  $("warning").classList.toggle("hidden",game.anxiety<60);
-}
-function renderTags(){
-  if(game.anxiety>=80){$("partner-tags").setAttribute("aria-label","線索被心理壓力遮住");$("partner-tags").innerHTML="<span class=\"tag hidden-tag\">線索被心理壓力遮住</span>";return}
-  let tags=game.partner.clues.map(clue=>clue.revealed?"<span class=\"tag safe clue-"+escapeHTML(clue.kind)+"\">"+escapeHTML(clue.label)+"</span>":"<span class=\"tag hidden-tag\">❓ 隱藏情報</span>").join("");
-  if(game.partner.tested)tags+=game.partner.infected?"<span class=\"tag risk\">🧪 試紙異常：今晚先停下</span>":"<span class=\"tag safe\">🧪 試紙未見異常</span>";
-  $("partner-tags").setAttribute("aria-label","已知線索");
-  $("partner-tags").innerHTML=tags;
-}
-function renderDialogueHistory(){
-  const history=$("chat-history"),list=$("chat-history-list"),summary=history?.querySelector?.("summary");
-  if(!history||!list)return;
-  const clues=game.anxiety>=80?[]:game.partner.clues.filter(clue=>clue.revealed);
-  history.classList.toggle("hidden",clues.length<2);
-  if(clues.length<2)return;
-  if(summary)summary.textContent="今晚翻出的情報（"+clues.length+"）";
-  list.innerHTML=clues.map(clue=>"<li><strong>"+escapeHTML(clue.label)+"</strong><span>"+escapeHTML(clue.dialogue)+"</span></li>").join("");
-}
-function renderDialogue(){
-  const card=$("chat-dialogue");
-  if(!card)return;
-  const label=card.querySelector(".chat-dialogue-label"),state=card.querySelector(".chat-dialogue-state"),copy=card.querySelector(".chat-dialogue-copy");
-  if(game.anxiety>=80){
-    if(label)label.textContent="刺探對話";
-    if(state)state.textContent="壓力干擾中";
-    if(copy)copy.textContent="你聽得見聲音，卻抓不住意思；先把壓力降下來。";
-    renderDialogueHistory();
-    return;
-  }
-  const clue=currentClue(game.partner),remaining=hiddenClues(game.partner).length;
-  if(game.partner.tested){
-    if(label)label.textContent="🧪 檢測結果";
-    if(state)state.textContent="底牌先翻開";
-    if(copy)copy.textContent=game.partner.infected?"第二條線慢慢浮出來。桌上安靜了一拍——今晚到這裡。":"只有控制線。你把試紙收回口袋；其中一個謎暫時安靜了。";
-    renderDialogueHistory();
-    return;
-  }
-  if(label)label.textContent=clue?.label||"刺探對話";
-  if(state)state.textContent=remaining?"還藏著一條":"情報已翻開";
-  if(copy)copy.textContent=clue?.dialogue||"你可以花 3% 壓抑，換一條今晚的情報。";
-  renderDialogueHistory();
-}
-function renderActions(){
-  const locks=actionLocks(game.partner);
-  $("action-buttons").innerHTML=Object.entries(ACTIONS).filter(([key])=>key!=="hospital").map(([key,action])=>{
-    const lock=locks[key],classes="action-btn "+(key.includes("raw")?"raw ":"")+(lock?"locked":""),copy=lock||action.copy,reason=lock?" aria-disabled=\"true\" aria-label=\""+escapeHTML(action.label+"。"+lock)+"\" title=\""+escapeHTML(lock)+"\"":"";
-    return"<button type=\"button\" class=\""+classes+"\" data-action=\""+key+"\""+reason+"><strong>"+escapeHTML(action.label)+"</strong><small>"+escapeHTML(copy)+"</small></button>";
-  }).join("");
-  document.querySelectorAll("[data-action]").forEach(button=>button.onclick=()=>resolve(button.dataset.action));
+  showScreen("round-screen");
+  unlockSoon();
 }
 
-function beginRoundInteraction(){
-  if(interactionLocked||!game||game.ended||game.phase!=="round"||!game.partner)return false;
+function renderStats(){
+  $("heat-value").textContent=`${game.heat}%`;
+  $("heat-meter").value=game.heat;
+  $("heat-meter").textContent=`${game.heat}%`;
+  $("heat-meter").setAttribute("aria-valuenow",String(game.heat));
+  $("anxiety-value").textContent=`${game.anxiety}%`;
+  $("anxiety-meter").value=game.anxiety;
+  $("anxiety-meter").textContent=`${game.anxiety}%`;
+  $("anxiety-meter").setAttribute("aria-valuenow",String(game.anxiety));
+  $("panic-note").classList.toggle("hidden",game.anxiety<80);
+}
+
+function renderTools(){
+  const partner=game.currentPartner;
+  $("test-count").textContent=`x${game.testkits}`;
+  $("test-btn").disabled=!partner||game.testkits<1||partner.tested;
+  $("hospital-btn").disabled=false;
+}
+
+function renderPartner(){
+  const partner=game.currentPartner;
+  if(!partner)return;
+  $("partner-avatar").innerHTML=avatarMarkup(partner);
+  $("partner-name").textContent=partner.name;
+  $("partner-flirt").textContent=`「${partner.flirt}」`;
+  $("partner-tags").innerHTML=partner.tags.map((tag,index)=>renderTag(tag,index)).join("");
+  const hidden=SoloEngine.hiddenTags(partner);
+  if(partner.tested){
+    $("probe-result").textContent=partner.infected?"試紙：異常":"試紙：未見異常";
+  }else if(partner.probed){
+    $("probe-result").textContent="隱藏標籤已翻開。";
+  }else{
+    $("probe-result").textContent=hidden.length?"還有一個標籤沒翻開。":"標籤已全部翻開。";
+  }
+  $("probe-btn").disabled=partner.probed||partner.tested||hidden.length===0;
+  const probePressure=SoloEngine.pressureDelta(game.anxiety,0);
+  $("probe-btn").textContent=$("probe-btn").disabled?"💬 已經問完":`💬 刺探 · 壓抑 +3${probePressure?` · 壓力 ${signed(probePressure)}`:""}`;
+}
+
+function renderTag(tag,index){
+  if(!tag.revealed)return'<span class="tag tag-hidden">❓ 隱藏標籤</span>';
+  if(game.anxiety>=80&&tag.tone!=="boundary"&&index%2===1)return'<span class="tag tag-fog" aria-label="模糊標籤">██████</span>';
+  const className=tag.tone==="risk"?"tag-risk":tag.tone==="safe"?"tag-safe":tag.tone==="boundary"?"tag-boundary":"";
+  return`<span class="tag ${className}">${escapeHTML(tag.label)}</span>`;
+}
+
+function renderActions(){
+  const locks=SoloEngine.getActionLocks(game.currentPartner);
+  $("action-buttons").innerHTML=Object.entries(ACTIONS).map(([key,action])=>{
+    const lock=locks[key];
+    const classes=["action-btn",key.includes("raw")?"raw":"",key==="refuse"?"refuse":""].filter(Boolean).join(" ");
+    const pressure=SoloEngine.pressureDelta(game.anxiety,action.anxiety);
+    const cost=`壓抑 ${signed(action.heat)}${pressure?` · 壓力 ${signed(pressure)}`:""}`;
+    return`<button type="button" class="${classes}" data-action="${key}"${lock?' aria-disabled="true"':''}><strong>${escapeHTML(action.label)}</strong><small>${escapeHTML(lock||cost)}</small></button>`;
+  }).join("");
+  document.querySelectorAll("[data-action]").forEach(button=>{
+    button.onclick=()=>takeAction(button.dataset.action);
+  });
+}
+
+function probe(){
+  if(!lockInteraction())return;
+  const result=SoloEngine.probe(game);
+  if(!result.ok){unlockSoon();return;}
+  saveGame();
+  if(result.result)return renderFinale();
+  renderStats();
+  renderPartner();
+  renderActions();
+  showFeedback();
+}
+
+function testPartner(){
+  if(!lockInteraction())return;
+  const result=SoloEngine.testPartner(game);
+  if(!result.ok){unlockSoon();return;}
+  saveGame();
+  renderTools();
+  renderPartner();
+  renderActions();
+  toast(result.infected?"試紙：異常":"試紙：未見異常");
+  unlockSoon();
+}
+
+function visitHospital(){
+  if(!lockInteraction())return;
+  const result=SoloEngine.hospital(game);
+  saveGame();
+  if(result.result)return renderFinale();
+  renderStats();
+  showFeedback();
+}
+
+function takeAction(key){
+  if(!lockInteraction())return;
+  const result=SoloEngine.takeAction(game,key);
+  if(!result.ok){
+    toast(result.reason||"這個選項目前不能用");
+    unlockSoon();
+    return;
+  }
+  saveGame();
+  if(result.result)return renderFinale();
+  renderStats();
+  showFeedback();
+}
+
+function showFeedback(){
+  const feedback=game.feedback;
+  if(!feedback)return;
+  const last=game.history[game.history.length-1];
+  $("feedback-turn").textContent=String(last?.turn||Math.max(1,game.turn-1));
+  $("feedback-title").textContent=feedback.title;
+  $("feedback-body").textContent=feedback.body;
+  $("feedback-delta").textContent=feedback.delta;
+  $("feedback-overlay").classList.remove("hidden");
+  $("main-content").inert=true;
+  document.body.classList.add("modal-open");
+  $("continue-btn").focus();
+  unlockSoon();
+}
+
+function continueGame(){
+  if(!lockInteraction())return;
+  if(!SoloEngine.continueAfterFeedback(game)){unlockSoon();return;}
+  hideFeedback();
+  if(!game.currentPartner)SoloEngine.drawPartner(game);
+  saveGame();
+  renderRound();
+}
+
+function hideFeedback(){
+  $("feedback-overlay")?.classList.add("hidden");
+  if($("main-content"))$("main-content").inert=false;
+  document.body.classList.remove("modal-open");
+}
+
+function renderFinale(){
+  if(!game?.result)return;
+  hideFeedback();
+  const ending=ENDINGS[game.result];
+  $("finale-status").textContent=ending.label;
+  $("finale-heading").textContent=ending.title;
+  $("finale-body").textContent=ending.body;
+  $("finale-image").src=ending.image;
+  $("finale-image").srcset=ending.imageSrcSet;
+  $("finale-image").sizes="(max-width: 620px) calc(100vw - 52px), 900px";
+  $("finale-image").alt=ending.title;
+  const nightCount=game.history.filter(item=>item.type!=="test").length;
+  const partnerTurns=new Set(game.history.map(item=>item.profileId).filter(Boolean)).size;
+  const probeCount=game.history.filter(item=>item.type==="probe").length;
+  const hospitalCount=game.history.filter(item=>item.type==="hospital").length;
+  const testCount=game.history.filter(item=>item.type==="test").length;
+  $("replay-overview").innerHTML=[
+    `經過 ${nightCount} 晚`,
+    `遇見 ${partnerTurns} 人`,
+    `刺探 ${probeCount} 次`,
+    `醫院 ${hospitalCount} 次`,
+    `試紙 ${testCount?`${testCount} 次`:"未使用"}`,
+    `${genderLabel(game.playerGender)} · 遇見${genderLabel(game.partnerGender)}`
+  ].map(text=>`<span>${escapeHTML(text)}</span>`).join("");
+  $("replay-list").innerHTML=game.history.map(renderReplayItem).join("");
+  saveGame();
+  showScreen("awards-screen");
+  unlockSoon();
+}
+
+function renderReplayItem(item){
+  if(item.type==="hospital"){
+    const positive=item.checkResult==="positive";
+    return`<article class="replay-item"><span class="replay-icon" aria-hidden="true">🏥</span><div><strong>第 ${item.turn} 晚 · 去醫院</strong><p class="${positive?"truth-risk":"truth-safe"}">結果：${positive?"感染":"未見感染"} · 壓抑 ${item.heat}% · 壓力 ${item.anxiety}%</p></div></article>`;
+  }
+  const partner=item.partner;
+  if(!partner)return"";
+  if(item.type==="test"){
+    const positive=item.checkResult==="positive";
+    return`<article class="replay-item">${avatarMarkup(partner,"replay-avatar")}<div><strong>第 ${item.turn} 晚 · ${escapeHTML(partner.name)} · 對方試紙</strong><p class="${positive?"truth-risk":"truth-safe"}">結果：${positive?"異常":"未見異常"} · 不經過一晚</p></div></article>`;
+  }
+  const truth=partner.infected?"底牌：感染":"底牌：未見感染";
+  const triggered=item.transmission?" · 這一晚觸發":"";
+  const tags=partner.tags.map(tag=>`<span>${escapeHTML(tag.label)}</span>`).join("");
+  return`<article class="replay-item">${avatarMarkup(partner,"replay-avatar")}<div><strong>第 ${item.turn} 晚 · ${escapeHTML(partner.name)} · ${escapeHTML(item.actionLabel)}</strong><p>壓抑 ${item.heat}% · 壓力 ${item.anxiety}%</p><p class="${partner.infected?"truth-risk":"truth-safe"}">${truth}${triggered}</p><div class="replay-tags">${tags}</div></div></article>`;
+}
+
+function avatarMarkup(person,className=""){
+  if(!person||!KNOWN_AVATARS.has(person.avatar))return'<span class="replay-icon" aria-hidden="true">👤</span>';
+  const x=Number.isInteger(Number(person.x))&&Number(person.x)>=0&&Number(person.x)<=4?Number(person.x):0;
+  const y=Number.isInteger(Number(person.y))&&Number(person.y)>=0&&Number(person.y)<=4?Number(person.y):0;
+  const sheetClass=AVATAR_CLASS_BY_PATH.get(person.avatar);
+  return`<span class="avatar-sprite ${sheetClass} sprite-x-${x} sprite-y-${y} ${className}" aria-hidden="true"></span>`;
+}
+
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(screen=>screen.classList.add("hidden"));
+  const target=$(id);
+  target.classList.remove("hidden");
+  document.body.classList.toggle("gameplay-active",id!=="intro-screen");
+  window.scrollTo({top:0,behavior:"auto"});
+  const heading=target.querySelector("h2");
+  if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
+}
+
+function lockInteraction(){
+  if(interactionLocked||!game||game.result)return false;
   interactionLocked=true;
-  document.querySelectorAll("#round-screen button").forEach(button=>button.disabled=true);
   return true;
 }
-function beginSummaryInteraction(){
-  if(interactionLocked||!game||game.ended||game.phase!=="summary")return false;
-  interactionLocked=true;
-  $("next-btn").disabled=true;
-  return true;
-}
-function unlockInteraction(){
+
+function unlockSoon(){
   const release=()=>{interactionLocked=false};
   if(typeof window.requestAnimationFrame==="function")window.requestAnimationFrame(release);
   else setTimeout(release,0);
 }
-function chat(){
-  if(!beginRoundInteraction())return;
-  const currentPartner=game.partner;
-  const clue=conversation()?.revealNextClue?.(currentPartner.clues);
-  if(!clue){renderRoundControls();unlockInteraction();return}
-  currentPartner.lastClueId=clue.id;
-  game.heat=clamp(game.heat+GAME_CONFIG.chatHeat);
-  if(game.heat>=100){const entry=record(PASSIVE_ACTIONS.chatOverload,currentPartner.name,currentPartner,false);resolveTerminalState(entry,currentPartner);return}
-  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast("套出「"+clue.label+"」。壓抑 +3。");unlockInteraction();
-}
-function test(){
-  if(!beginRoundInteraction())return;
-  game.testkits--;game.partner.tested=true;conversation()?.revealAllClues?.(game.partner.clues);
-  save();renderStats();renderTags();renderDialogue();renderRoundControls();toast(game.partner.infected?"第二條線浮出來。今晚到這裡。":"只有控制線；謎少了一個。");unlockInteraction();
+
+function toast(message){
+  $("toast").textContent=message;
+  $("toast").classList.remove("hidden");
+  clearTimeout(toast.timer);
+  toast.timer=setTimeout(()=>$("toast").classList.add("hidden"),2200);
 }
 
-function hospital(){
-  if(!beginRoundInteraction())return;
-  game.hospitals--;game.anxiety=0;game.heat=clamp(game.heat+ACTIONS.hospital.heat);
-  const entry=record(ACTIONS.hospital,"醫院檢查",null,false);
-  if(game.infected)return end("hospital_positive");
-  if(resolveTerminalState(entry,null))return;
-  showSummary(entry,"白光下沒有翻出異常","壓力歸零，壓抑 +20；這一晚留在候診室。","去醫院","壓抑 +20 · 壓力歸零",null);
-}
-function resolve(key){
-  if(!beginRoundInteraction())return;
-  const action=ACTIONS[key],currentPartner=game.partner;
-  if(!action||!currentPartner){unlockInteraction();return}
-  const boundaryLock=actionLocks(currentPartner)[key];
-  if(boundaryLock){renderRoundControls();toast(boundaryLock);unlockInteraction();return}
-  let copy=action.copy,transmission=false;
-  if(key==="refuse")copy="你把杯墊推回去。對方挑了挑眉，下一桌還在等。";
-  else if(currentPartner.infected&&Math.random()<action.risk/100){game.infected=true;transmission=true}
-  game.heat=clamp(game.heat+action.heat);game.anxiety=clamp(game.anxiety+action.anxiety);
-  const entry=record(action,currentPartner.name,currentPartner,transmission);
-  if(resolveTerminalState(entry,currentPartner))return;
-  const chaos=applyChaos(entry);
-  if(resolveTerminalState(entry,currentPartner))return;
-  const body=key==="refuse"?copy:(action.risk>=20?"燈光照不出答案。這一晚先封存，真相留給醫院或第 10 晚。":copy);
-  showSummary(entry,chaos?chaos.title:"這一晚先封存",body+(chaos?" "+chaos.text:""),action.short,(action.score>=0?"+":"")+action.score+" 生存分 · 壓力 "+(action.anxiety>=0?"+":"")+action.anxiety,chaos);
-}
-function resolveTerminalState(entry,currentPartner){
-  if(game.heat>=100){lossOfControl(entry,currentPartner);return true}
-  if(game.anxiety>=100){end("anxiety");return true}
-  return false;
-}
-function record(action,name,currentPartner,transmission){
-  game.score+=Number(action.score)||0;
-  const entry={kind:"encounter",round:game.round+1,name:currentPartner?.name||name,avatar:currentPartner?.avatar||"",gender:currentPartner?.gender||null,x:currentPartner?.x,y:currentPartner?.y,profileId:currentPartner?.profileId||null,partnerInfected:Boolean(currentPartner?.infected),action:action.short,heat:game.heat,anxiety:game.anxiety,risk:action.risk||0,transmission,event:null,skipReason:null};
-  game.log.push(entry);game.round=Math.min(GAME_CONFIG.roundCount,game.round+1);game.partner=null;game.phase="summary";return entry;
-}
-function applyChaos(entry){
-  if(Math.random()>=CHAOS_EVENT_CHANCE)return null;
-  const event={...pick(CHAOS_EVENTS),appliedSkip:false},lostTest=Boolean(event.loseTest&&game.testkits>0);
-  if(event.loseTest&&!lostTest)delete event.loseTest;
-  game.heat=clamp(game.heat+event.heat);game.anxiety=clamp(game.anxiety+event.anxiety);
-  if(lostTest)game.testkits=0;
-  const skipped=Boolean(event.skip)&&game.round<GAME_CONFIG.roundCount;
-  event.appliedSkip=skipped;
-  if(skipped){
-    game.round++;
-    game.log.push({kind:"skipped",round:game.round,name:"突發快轉",avatar:"",gender:null,x:0,y:0,profileId:null,partnerInfected:false,action:"今晚被突發事件略過",heat:game.heat,anxiety:game.anxiety,risk:0,transmission:false,event:null,skipReason:event});
+function saveGame(){
+  if(!game)return;
+  const payload=JSON.stringify({savedAt:Date.now(),game});
+  const local=accessStorage("localStorage");
+  if(writeStorage(local,payload)){
+    const session=accessStorage("sessionStorage");
+    try{session?.removeItem(STORE);}catch{}
+    return;
   }
-  entry.event=event;entry.heat=game.heat;entry.anxiety=game.anxiety;
-  return event;
-}
-function showSummary(entry,heading,body,scoreTitle,scoreCopy,chaos){
-  game.phase="summary";
-  $("summary-title").textContent="第 "+entry.round+" 晚翻牌";$("summary-heading").textContent=heading;$("summary-body").textContent=body;$("summary-extra").innerHTML=summaryMeta();
-  const chaosCard=chaos?"<div><strong>🎲 "+escapeHTML(chaos.title)+"</strong><span>壓抑 "+(chaos.heat>=0?"+":"")+chaos.heat+" · 壓力 "+(chaos.anxiety>=0?"+":"")+chaos.anxiety+(chaos.appliedSkip?" · 少一晚":"")+(chaos.loseTest?" · 試紙失效":"")+"</span></div>":"";
-  $("scoreboard").innerHTML="<div><strong>"+escapeHTML(scoreTitle)+"</strong><span>"+escapeHTML(scoreCopy)+"</span></div>"+chaosCard;
-  $("next-btn").textContent=game.round>=GAME_CONFIG.roundCount?"最終結算":"下一晚，走起";$("next-btn").disabled=false;save();show("summary-screen");unlockInteraction();
-}
-function lossOfControl(entry,currentPartner){
-  const targetEntry=entry||game.log[game.log.length-1],completedAction=targetEntry?.action,leftTable=completedAction===ACTIONS.refuse.short,atHospital=completedAction===ACTIONS.hospital.short,locks=currentPartner?actionLocks(currentPartner):{},forcedOptions=leftTable||atHospital?[]:[["oral_raw",ACTIONS.oral_raw],["sex_raw",ACTIONS.sex_raw]].filter(([key])=>!locks[key]).map(([,action])=>action),forced=currentPartner&&forcedOptions.length?pick(forcedOptions):null,exposure=Boolean(currentPartner?.infected)&&Boolean(forced)&&Math.random()<forced.risk/100;
-  if(exposure)game.infected=true;
-  if(forced)game.anxiety=clamp(game.anxiety+forced.anxiety);
-  if(targetEntry){
-    const suffix=forced?" → 失控追加："+forced.short:leftTable?" → 你確實離開了；壓抑滿格，本局提前結束":atHospital?" → 檢查完成；壓抑滿格，本局提前結束":" → 壓抑滿格，沒有追加親密行動";
-    targetEntry.action+=suffix;targetEntry.risk=Math.max(safePercent(targetEntry.risk,0),forced?.risk||0);targetEntry.transmission=Boolean(targetEntry.transmission||exposure);targetEntry.heat=game.heat;targetEntry.anxiety=game.anxiety;
+  if(writeStorage(accessStorage("sessionStorage"),payload))return;
+  if(!storageWarningShown){
+    storageWarningShown=true;
+    toast("這個瀏覽器無法保存進度");
   }
-  end("urge");
 }
-function summaryMeta(){return"<span>壓抑 "+game.heat+"%</span><span>壓力 "+game.anxiety+"%</span><span>生存分 "+game.score+"</span>"}
-function next(){if(!beginSummaryInteraction())return;game.round>=GAME_CONFIG.roundCount?finale():renderRound()}
-function end(key){game.ended=true;game.phase="finale";game.result=key;game.partner=null;save();finale()}
-function endingKey(){if(VALID_RESULTS.has(game.result))return game.result;if(game.infected)return"final_positive";if(game.heat===0)return"victory";return"unfinished"}
-function finale(){
-  if(!game)return show("intro-screen");
-  const entries=Array.isArray(game.log)?game.log:[],key=endingKey(),ending=ENDINGS[key],exposures=entries.filter(item=>item.transmission),riskCount=entries.filter(item=>item.risk>0).length,chaosCount=entries.filter(item=>item.event).length;
-  const unlockedStories=new Set(entries.map(item=>item.profileId).filter(Boolean)).size;
-  const finaleImage=$("finale-image");
-  $("finale-heading").textContent=ending.title;$("finale-body").textContent=ending.body;finaleImage.src=ending.image;finaleImage.srcset=ending.imageSrcSet||"";finaleImage.sizes="(max-width: 620px) calc(100vw - 32px), min(840px, calc(100vw - 56px))";finaleImage.alt=ending.title;$("finale-status").textContent=ending.label;
-  const delayed=exposures.length?"<span class=\"risk-result\">延遲判決觸發：第 "+exposures.map(item=>item.round).join("、")+" 晚</span>":game.infected?"<span class=\"risk-result\">感染已揭曉；觸發晚數未留存</span>":"<span>延遲判決：未觸發</span>";
-  $("replay-overview").innerHTML="<span>結局："+escapeHTML(ending.label)+"</span><span>走過晚數："+game.round+" / "+GAME_CONFIG.roundCount+"</span><span>解鎖故事："+unlockedStories+" 位</span><span>突發事件："+chaosCount+"</span><span>風險選擇："+riskCount+"</span><span>設定："+genderLabel(game.playerGender)+" · 遇見"+genderLabel(game.partnerGender)+"</span><span>最終壓抑："+game.heat+"%</span><span>最終壓力："+game.anxiety+"%</span>"+delayed+"<p class=\"replay-disclaimer\">角色與事件皆為虛構；店名只作城市場景彩蛋，與真實店家無關。</p>";
-  $("replay-list").innerHTML=entries.map(renderReplayItem).join("");
-  game.ended=true;game.phase="finale";save();show("awards-screen");unlockInteraction();
+
+function loadGame(){
+  const candidates=[];
+  for(const name of ["localStorage","sessionStorage"]){
+    const storage=accessStorage(name);
+    if(!storage)continue;
+    try{
+      const raw=storage.getItem(STORE);
+      if(!raw)continue;
+      const parsed=JSON.parse(raw);
+      const wrapped=parsed&&typeof parsed==="object"&&parsed.game?parsed:null;
+      const normalized=normalizeGame(wrapped?wrapped.game:parsed);
+      if(normalized){candidates.push({game:normalized,savedAt:Number(wrapped?.savedAt)||0});continue;}
+      storage.removeItem(STORE);
+    }catch{
+      try{storage.removeItem(STORE);}catch{}
+    }
+  }
+  candidates.sort((a,b)=>b.savedAt-a.savedAt);
+  return candidates[0]?.game||null;
 }
-function renderReplayItem(item){
-  const profile=findPartyProfile(item),isSkipped=item.kind==="skipped",isHospital=!isSkipped&&!item.profileId&&(item.name==="醫院檢查"||safeText(item.action,110).startsWith("去醫院")),fallbackIcon=isHospital?"🏥":"👤",portrait=isSkipped?"<span class=\"replay-icon\" aria-hidden=\"true\">🎲</span>":avatarMarkup(profile||item,"replay-avatar")||"<span class=\"replay-icon\" aria-hidden=\"true\">"+fallbackIcon+"</span>",name=profile?.name||safeText(item.name,80)||"未記錄對象",action=safeText(item.action,110)||"未記錄行動",risk=item.risk?" · 風險 "+item.risk+"%":"",chaos=item.event?" · 突發："+escapeHTML(item.event.title)+(item.event.appliedSkip?"（少一晚）":"")+(item.event.loseTest?"（試紙失效）":""):"",skipped=isSkipped&&item.skipReason?" · 突發快轉："+escapeHTML(item.skipReason.title):"",result=item.transmission?" · 最終揭曉：這一晚觸發感染":"",profileInfected=Boolean(item.transmission||item.partnerInfected||(profile?.infected??false)),venue=profile?.venueCameo?"<p class=\"story-venue\"><b>城市夜生活彩蛋｜</b>"+escapeHTML(profile.venueCameo)+"</p>":"",truth=profile?.infectionSource||(item.transmission?"舊紀錄把答案留在這一晚。":""),health=profileInfected&&truth?"<p class=\"story-health story-risk\"><b>延遲真相｜</b>"+escapeHTML(truth)+"</p>":"",story=profile?.story?"<details class=\"story-unlock\"><summary>🔓 真相補完 · "+escapeHTML(profile.title)+"</summary><div class=\"story-unlock-body\"><p>"+escapeHTML(profile.story)+"</p>"+venue+health+"</div></details>":"";
-  return"<article class=\"replay-item\">"+portrait+"<div><strong>第 "+item.round+" 晚 · "+escapeHTML(name)+" · "+escapeHTML(action)+"</strong><p>壓抑 "+item.heat+"% · 壓力 "+item.anxiety+"%"+risk+chaos+skipped+result+"</p>"+story+"</div></article>";
+
+function clearGame(){
+  for(const name of ["localStorage","sessionStorage"]){
+    const storage=accessStorage(name);
+    try{storage.removeItem(STORE);}catch{}
+  }
 }
-function toast(text){$("toast").textContent=text;$("toast").classList.remove("hidden");clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").classList.add("hidden"),3000)}
+
+function accessStorage(name){
+  try{return window[name]||null;}catch{return null;}
+}
+
+function writeStorage(storage,payload){
+  if(!storage)return false;
+  try{storage.setItem(STORE,payload);return true;}catch{return false;}
+}
+
+function normalizeGame(raw){
+  if(!raw||raw.schemaVersion!==1||!VALID_GENDERS.has(raw.playerGender)||!VALID_GENDERS.has(raw.partnerGender))return null;
+  const restored=SoloEngine.createGame(raw.playerGender,raw.partnerGender);
+  restored.turn=Number.isSafeInteger(raw.turn)&&raw.turn>=1?raw.turn:1;
+  restored.heat=clamp(raw.heat);
+  restored.anxiety=clamp(raw.anxiety);
+  restored.testkits=raw.testkits===0?0:1;
+  restored.history=Array.isArray(raw.history)?raw.history.slice(-1000).map(normalizeHistoryEntry).filter(Boolean):[];
+  restored.infected=raw.infected===true||restored.history.some(item=>item.transmission);
+  restored.result=VALID_RESULTS.has(raw.result)?raw.result:null;
+  restored.phase=restored.result?"finale":raw.phase==="feedback"?"feedback":"turn";
+  restored.feedback=restored.phase==="feedback"?normalizeFeedback(raw.feedback):null;
+  restored.currentPartner=restored.result?null:normalizePartner(raw.currentPartner,restored.turn);
+  if(restored.phase==="feedback"&&!restored.feedback)restored.phase="turn";
+  return restored;
+}
+
+function normalizePartner(raw,turn){
+  const profile=findProfile(raw?.profileId);
+  if(!profile)return null;
+  const tags=normalizeTags(raw.tags);
+  if(tags.length<3||tags.length>4||tags.filter(tag=>!tag.revealed).length>1)return null;
+  return{
+    profileId:profile.id,
+    name:profile.name,
+    gender:profile.gender,
+    avatar:profile.image,
+    x:profile.x,
+    y:profile.y,
+    flirt:FLIRT_LINES.includes(raw.flirt)?raw.flirt:FLIRT_LINES[0],
+    tags,
+    infected:raw.infected===true,
+    partnerRisk:Math.max(GAME_CONFIG.minPartnerRisk,Math.min(GAME_CONFIG.maxPartnerRisk,Number(raw.partnerRisk)||GAME_CONFIG.basePartnerRisk)),
+    tested:raw.tested===true,
+    probed:raw.probed===true,
+    turn
+  };
+}
+
+function normalizeTags(rawTags){
+  if(!Array.isArray(rawTags))return[];
+  const seen=new Set();
+  return rawTags.map(raw=>{
+    const canonical=TAG_CATALOG.get(raw?.id);
+    if(!canonical||seen.has(canonical.id))return null;
+    seen.add(canonical.id);
+    return{...canonical,revealed:raw.revealed!==false};
+  }).filter(Boolean);
+}
+
+function normalizeHistoryEntry(raw){
+  if(!raw||!["probe","action","hospital","test"].includes(raw.type))return null;
+  const turn=Number(raw.turn);
+  if(!Number.isSafeInteger(turn)||turn<1)return null;
+  const partner=raw.type==="hospital"?null:normalizePartner(raw.partner,turn);
+  if(raw.type!=="hospital"&&!partner)return null;
+  const actionKey=safeText(raw.actionKey,30);
+  const actionLabel=raw.type==="hospital"?"去醫院":raw.type==="probe"?"刺探":raw.type==="test"?"對方試紙":ACTIONS[actionKey]?.short;
+  if(!actionLabel)return null;
+  const checkResult=["positive","negative"].includes(raw.checkResult)?raw.checkResult:null;
+  return{type:raw.type,turn,profileId:partner?.profileId||null,partner,actionKey,actionLabel,heat:clamp(raw.heat),anxiety:clamp(raw.anxiety),checkResult,transmission:raw.transmission===true};
+}
+
+function normalizeFeedback(raw){
+  if(!raw||typeof raw!=="object")return null;
+  const title=safeText(raw.title,60),body=safeText(raw.body,160),delta=safeText(raw.delta,80);
+  if(!title||!body||!delta)return null;
+  return{title,body,delta,keepPartner:raw.keepPartner===true};
+}
+
+globalThis.SoloApp={normalizeGame,renderReplayItem,avatarMarkup};

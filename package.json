@@ -2,7 +2,7 @@
   "name": "healthy-social-solo-game",
   "private": true,
   "scripts": {
-    "check": "node --check app.js && node --check chaos.js && node --check conversation.js && node --check data.js && node --check stories.js && node --check extra-stories.js",
+    "check": "node --check data.js && node --check engine.js && node --check app.js",
     "test": "node --test tests/game-regression.test.js",
     "validate": "npm run check && npm run test"
   }

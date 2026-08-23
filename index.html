@@ -3,80 +3,161 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f3e9eb"><meta name="description" content="健康社交模擬遊戲：一個人也能玩的 10 晚單機社交模擬。">
+  <meta name="theme-color" content="#f5edef">
+  <meta name="description" content="健康社交模擬遊戲單機版：看線索、做選擇，直到最後翻牌。">
   <meta name="robots" content="index,follow">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <link rel="canonical" href="https://victoriac1122.github.io/happy-party-game-solo/">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_TW">
   <meta property="og:title" content="健康社交模擬遊戲｜單機版">
-  <meta property="og:description" content="一個人也能玩的 10 晚單機社交模擬。">
+  <meta property="og:description" content="看線索、做選擇，直到最後翻牌。">
   <meta property="og:url" content="https://victoriac1122.github.io/happy-party-game-solo/">
-  <meta property="og:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
+  <meta property="og:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-dawn-v2-1200.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="675">
   <meta property="og:image:type" content="image/jpeg">
-  <meta property="og:image:alt" content="健康社交模擬遊戲的動漫結局插圖">
+  <meta property="og:image:alt" content="夜店散場後迎向日出的動漫勝利插圖">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="健康社交模擬遊戲｜單機版">
-  <meta name="twitter:description" content="一個人也能玩的 10 晚單機社交模擬。">
-  <meta name="twitter:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-1200.jpg">
-  <meta name="twitter:image:alt" content="健康社交模擬遊戲的動漫結局插圖">
+  <meta name="twitter:description" content="看線索、做選擇，直到最後翻牌。">
+  <meta name="twitter:image" content="https://victoriac1122.github.io/happy-party-game-solo/assets/optimized/endings/victory-dawn-v2-1200.jpg">
+  <meta name="twitter:image:alt" content="夜店散場後迎向日出的動漫勝利插圖">
   <title>健康社交模擬遊戲｜單機版</title>
-  <link rel="stylesheet" href="./styles.css?v=solo8">
-  <link rel="stylesheet" href="./endings.css?v=solo8">
-  <link rel="stylesheet" href="./mobile.css?v=solo8">
-  <link rel="stylesheet" href="./stories.css?v=solo8">
-  <link rel="stylesheet" href="./conversations.css?v=solo8">
-  <link rel="stylesheet" href="./polish.css?v=solo8">
-  <script defer src="./data.js?v=solo8"></script>
-  <script defer src="./stories.js?v=solo8"></script>
-  <script defer src="./extra-stories.js?v=solo8"></script>
-  <script defer src="./chaos.js?v=solo8"></script>
-  <script defer src="./conversation.js?v=solo8"></script>
-  <script defer src="./app.js?v=solo8"></script>
+  <link rel="stylesheet" href="./styles.css?v=clean2">
+  <script defer src="./data.js?v=clean2"></script>
+  <script defer src="./engine.js?v=clean2"></script>
+  <script defer src="./app.js?v=clean2"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true"></div>
-  <noscript><p class="noscript-notice" role="alert">這個遊戲需要啟用 JavaScript 才能開始。</p></noscript>
-  <main id="main-content" class="app-shell">
-    <header class="hero-card"><div><p class="eyebrow">今晚鬧場特別版 · 一人開局</p><h1>健康社交模擬遊戲 <span class="solo-title">單機版</span></h1><p class="hero-copy">10 個晚上一直換桌。高風險後不會立刻公布結果；你得在氣氛、線索和自己的直覺中，把這一晚走完，還要撐過突發事故。</p></div><div class="hero-meta"><span class="meta-pill">單機版</span><span class="meta-pill">延遲判決</span><span class="meta-pill">10 晚</span></div></header>
+  <noscript><p class="noscript-notice">需要啟用 JavaScript 才能開始。</p></noscript>
 
-    <section id="intro-screen" class="panel screen active" aria-labelledby="intro-title">
-      <div class="panel-head"><div><p class="eyebrow">進場前的小抄</p><h2 id="intro-title">今晚會亂，規則看懂就好</h2></div></div>
-      <div id="load-error" class="notice-card load-error hidden" role="alert"><h3>遊戲元件沒有完整載入</h3><p>請重新載入頁面後再開始；目前不會建立不完整的遊戲進度。</p></div>
-      <div class="stack">
-        <article class="notice-card intro-notice"><h3>先說好：今晚全是虛構</h3><p>成人虛構情節；現實互動以本人同意與保護為前提。</p></article>
-        <div class="solo-setup"><label><span>你的性別</span><select id="player-gender"><option value="female">女</option><option value="male">男</option></select></label><label><span>今晚想遇到</span><select id="partner-gender"><option value="male">男</option><option value="female">女</option></select></label></div>
-        <p id="resume-note" class="resume-note hidden" role="status"></p>
-        <details class="game-guide-toggle"><summary>今晚規則</summary><div class="education-grid"><article class="notice-card"><h3>延遲判決</h3><p>高風險後不會立即公布結果；只有醫院檢查或最終結算才會翻牌。</p></article><article class="notice-card"><h3>醫院可提早翻牌</h3><p>醫院會清空心理壓力、提高壓抑值，也會當場揭曉目前結果。</p></article><article class="notice-card"><h3>怎麼才算贏</h3><p>第 10 晚結算時，壓抑值必須歸零，而且身體健康；壓抑或壓力滿格會提前結束。</p></article></div></details>
+  <main class="app-shell" id="main-content">
+    <header class="hero-card">
+      <div>
+        <p class="eyebrow">夜還沒散</p>
+        <h1>健康社交模擬遊戲 <span>單機版</span></h1>
+        <p>看標籤、決定要不要刺探，再選這一晚怎麼走。</p>
       </div>
-      <label class="consent-box"><input id="consent-checkbox" type="checkbox"><span>我已看過上方聲明，準備進場。</span></label>
-      <div class="actions-row"><button id="start-btn" class="primary-btn" type="button" disabled>一個人也能開喝</button><button id="new-game-btn" class="ghost-btn hidden" type="button">開始全新一局</button></div>
+      <div class="hero-mark" aria-hidden="true">💘</div>
+    </header>
+
+    <section id="intro-screen" class="panel screen" aria-labelledby="intro-title">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">進場</p>
+          <h2 id="intro-title">今晚想遇見誰？</h2>
+        </div>
+      </div>
+
+      <div id="load-error" class="load-error hidden" role="alert">遊戲元件沒有完整載入，請重新整理。</div>
+
+      <div class="setup-grid">
+        <label>
+          <span>你的性別</span>
+          <select id="player-gender">
+            <option value="female">女</option>
+            <option value="male">男</option>
+          </select>
+        </label>
+        <label>
+          <span>想遇見的性別</span>
+          <select id="partner-gender">
+            <option value="male">男</option>
+            <option value="female">女</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="rule-strip" aria-label="遊戲規則">
+        <span><b>壓抑 0</b> 才結算</span>
+        <span><b>壓力 80</b> 線索模糊</span>
+        <span><b>試紙看對方</b> · 醫院看自己</span>
+      </div>
+
+      <p id="resume-note" class="resume-note hidden" role="status"></p>
+      <div class="button-row">
+        <button id="start-btn" class="primary-btn" type="button">開始</button>
+        <button id="new-game-btn" class="ghost-btn hidden" type="button">開新局</button>
+      </div>
     </section>
 
     <section id="round-screen" class="panel screen hidden" aria-labelledby="round-title">
-      <div class="panel-head"><div><p class="eyebrow">今晚正在換桌</p><h2 id="round-title">第 1 晚 / 10</h2></div><span id="phase-pill" class="phase-pill warm">目標：壓抑歸零且健康</span></div>
-      <div class="stat-grid" aria-label="本局狀態">
-        <article><span>欲求不滿值</span><strong id="dissatisfaction-value">0%</strong><div class="meter"><div id="dissatisfaction-bar" class="meter-fill dissatisfaction-fill"></div></div></article>
-        <article><span>心理壓力</span><strong id="anxiety-value">0%</strong><div class="meter"><div id="anxiety-bar" class="meter-fill anxiety-fill"></div></div></article>
-        <article><span>生存分</span><strong id="score-value">0</strong><small id="testkit-value">試紙 1 · 醫院 1</small></article>
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">目前進度</p>
+          <h2 id="round-title">第 1 晚</h2>
+        </div>
+        <span class="phase-pill">還沒翻牌</span>
       </div>
-      <div id="warning" class="health-anxiety-warning hidden"></div>
+
+      <div class="stat-grid" aria-label="本局狀態">
+        <article>
+          <div><span>壓抑值</span><strong id="heat-value">50%</strong></div>
+          <progress class="meter" id="heat-meter" aria-label="壓抑值" max="100" value="50">50%</progress>
+        </article>
+        <article>
+          <div><span>心理壓力</span><strong id="anxiety-value">0%</strong></div>
+          <progress class="meter" id="anxiety-meter" aria-label="心理壓力" max="100" value="0">0%</progress>
+        </article>
+      </div>
+
+      <div id="panic-note" class="panic-note hidden" role="status">雜訊開始蓋住部分標籤。</div>
+
+      <div class="tool-row" aria-label="本局工具">
+        <button id="test-btn" class="tool-btn" type="button"><span>🧪 對方試紙</span><small id="test-count">x1</small></button>
+        <button id="hospital-btn" class="tool-btn" type="button"><span>🏥 去醫院</span><small>壓抑 +10 · 壓力歸零</small></button>
+      </div>
+
       <article class="partner-card" aria-labelledby="partner-name">
-        <div class="partner-head"><div id="partner-avatar" class="partner-avatar" aria-hidden="true">🌚</div><div><p class="eyebrow">今晚對象</p><h3 id="partner-name">還在抽人</h3><p id="partner-flirt" class="partner-flirt"></p></div></div>
-        <div id="partner-tags" class="tag-cloud" aria-label="已知線索"></div>
-        <section id="chat-dialogue" class="chat-dialogue" role="status" aria-live="polite" aria-atomic="true" aria-relevant="text" aria-label="刺探對話"><div class="chat-dialogue-head"><span class="chat-dialogue-label">刺探對話</span><span class="chat-dialogue-state">還藏著一條</span></div><p class="chat-dialogue-copy">花 3% 壓抑，換一條今晚的情報；每桌只能套一次。</p></section>
-        <details id="chat-history" class="chat-history hidden"><summary>已揭露對話</summary><ol id="chat-history-list"></ol></details>
-        <div class="utility-row" aria-label="刺探與檢測工具"><button id="chat-btn" class="secondary-btn slim-btn" type="button" aria-controls="chat-dialogue">💬 試探一次 · 壓抑 +3</button><button id="test-btn" class="secondary-btn slim-btn" type="button">🧪 用試紙確認</button><button id="hospital-btn" class="ghost-btn slim-btn" type="button">🏥 去驗一下</button></div>
+        <div class="partner-head">
+          <div id="partner-avatar" class="partner-avatar" aria-hidden="true"></div>
+          <div>
+            <p class="eyebrow">今晚對象</p>
+            <h3 id="partner-name">抽人中</h3>
+            <p id="partner-flirt" class="partner-flirt"></p>
+          </div>
+        </div>
+        <div id="partner-tags" class="tag-cloud" aria-label="對方標籤"></div>
+        <p id="probe-result" class="probe-result" aria-live="polite">還有一個標籤沒翻開。</p>
+        <button id="probe-btn" class="probe-btn" type="button">💬 刺探 · 壓抑 +3</button>
       </article>
-      <h3 id="action-title" class="action-title">這晚要怎麼走？</h3>
-      <div id="action-buttons" class="action-buttons" role="group" aria-labelledby="action-title"></div>
+
+      <h3 id="action-title" class="action-title">這一晚怎麼走？</h3>
+      <div id="action-buttons" class="action-grid" role="group" aria-labelledby="action-title"></div>
     </section>
 
-    <section id="summary-screen" class="panel screen hidden" aria-labelledby="summary-title"><div class="panel-head"><div><p class="eyebrow">今晚翻牌</p><h2 id="summary-title">第 1 晚翻牌</h2></div><span class="phase-pill">單機結算</span></div><article class="notice-card summary-card"><h3 id="summary-heading">今晚沒有白來</h3><p id="summary-body"></p><div id="summary-extra" class="summary-extra"></div></article><div id="scoreboard" class="scoreboard" aria-label="本晚結果"></div><button id="next-btn" class="primary-btn" type="button">下一晚，走起</button></section>
+    <section id="awards-screen" class="panel screen hidden" aria-labelledby="awards-title">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">最後翻牌</p>
+          <h2 id="awards-title">本局復盤</h2>
+        </div>
+        <span id="finale-status" class="phase-pill"></span>
+      </div>
+      <img id="finale-image" class="finale-art" alt="" width="1200" height="675" decoding="async">
+      <article class="finale-copy">
+        <h3 id="finale-heading"></h3>
+        <p id="finale-body"></p>
+      </article>
+      <div id="replay-overview" class="replay-overview"></div>
+      <div id="replay-list" class="replay-list" aria-label="每晚復盤"></div>
+      <button id="restart-btn" class="primary-btn" type="button">再來一局</button>
+    </section>
+  </main>
 
-    <section id="awards-screen" class="panel screen hidden" aria-labelledby="awards-title"><div class="panel-head"><div><p class="eyebrow">今晚頒獎台</p><h2 id="awards-title">你的 10 晚復盤</h2></div><span class="phase-pill warm">單機結局</span></div><img id="finale-image" class="finale-art" alt="" width="1672" height="941" decoding="async"><article class="notice-card finale-card"><span id="finale-status" class="finale-status">單機結局</span><h3 id="finale-heading">全場真相大白</h3><p id="finale-body"></p></article><div id="replay-overview" class="replay-overview" aria-label="復盤總覽"></div><div id="replay-list" class="replay-list" aria-label="每晚復盤"></div><button id="restart-btn" class="secondary-btn" type="button">再來一桌</button></section>
-  </main><div id="toast" class="toast hidden"></div>
-</body></html>
+  <section id="feedback-overlay" class="feedback-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+    <article class="feedback-card">
+      <span class="feedback-kicker">第 <b id="feedback-turn">1</b> 晚</span>
+      <h2 id="feedback-title"></h2>
+      <p id="feedback-body"></p>
+      <p id="feedback-delta" class="feedback-delta"></p>
+      <button id="continue-btn" class="primary-btn" type="button">繼續</button>
+    </article>
+  </section>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
